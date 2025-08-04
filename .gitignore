@@ -1,0 +1,18 @@
+# ===============================================
+# Files to ignore for your banking project
+# ===============================================
+
+# Ignore the vendor directory. Render will install dependencies from composer.json.
+/vendor/
+
+# Ignore local editor and log files
+.vscode/
+debug_log.txt
+
+# Ignore temporary, backup, or local development files.
+*.bak
+*_BACKUP_*.php
+*_OLD.php
+
+# Ignore the .gcloudignore file since it's not needed for Render.
+.gcloudignore

@@ -1,0 +1,19 @@
+runtime: php82
+automatic_scaling:
+  min_instances: 0
+
+handlers:
+- url: /plugins
+  static_dir: plugins
+- url: /dist
+  static_dir: dist
+- url: /assets
+  static_dir: assets
+- url: /uploads
+  static_dir: uploads
+
+# Final catch-all handler for EVERYTHING.
+# All requests will be sent to the smart router in index.php.
+- url: /.*
+  script: index.php
+  secure: always

@@ -1,0 +1,20 @@
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+
+    # This line tells the server that your project's root is the /banking/ folder.
+    # This is the key to fixing the "Failed to fetch" error locally.
+    RewriteBase /banking/
+
+    # This line is optional but good for CORS if needed in the future.
+    Header set Access-Control-Allow-Origin "*"
+
+    # These two lines are the key. They check if the requested URL
+    # is NOT a real file or a real directory.
+    RewriteCond %{REQUEST_FILENAME} !-f
+    RewriteCond %{REQUEST_FILENAME} !-d
+
+    # If the conditions above are met, this rule sends the request
+    # to your main index.php file to handle the routing.
+    RewriteRule . index.php [L]
+
+</IfModule>
