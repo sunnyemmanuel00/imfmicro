@@ -1,6 +1,11 @@
 # Start with a base PHP image
 FROM php:8.1-apache
 
+# Install PostgreSQL client libraries
+RUN apt-get update && apt-get install -y \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
 # Install required PHP extensions, including PostgreSQL
 RUN docker-php-ext-install mysqli pdo pdo_mysql pgsql
 
