@@ -42,7 +42,10 @@ class DBConnection{
             }
         }
     }
-
+    
+    // The destructor has been commented out to prevent premature connection closure.
+    // PHP will automatically close the connection at the end of the script.
+    /*
     public function __destruct(){
         if ($this->conn) {
             // Close the connection based on which one was used
@@ -53,5 +56,6 @@ class DBConnection{
             }
         }
     }
+    */
 }
 ?>
