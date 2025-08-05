@@ -9,3 +9,6 @@ COPY . /var/www/html/
 
 # Expose port 80 to the outside world
 EXPOSE 80
+
+# The command to run the application
+CMD ["apache2-foreground"]
