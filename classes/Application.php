@@ -11,9 +11,6 @@ class Application extends Master {
         parent::__construct();
     }
 
-    // The problematic __destruct function has been removed.
-
-    // Function to handle the contact form submission
     public function submit_inquiry(){
         $resp = ['status' => 'failed', 'msg' => 'An unknown error occurred.'];
 
@@ -31,35 +28,51 @@ class Application extends Master {
             return json_encode($resp);
         }
 
-        // Check if a user is logged in
         $user_id = $this->settings->userdata('id') ?? null;
+        
+        $sql = DB_TYPE === 'mysql' ? 
+            "INSERT INTO `inquiries` (`name`, `email`, `phone`, `subject`, `message`, `type`, `user_id`) VALUES (?, ?, ?, ?, ?, ?, ?)" :
+            'INSERT INTO "inquiries" ("name", "email", "phone", "subject", "message", "type", "user_id") VALUES ($1, $2, $3, $4, $5, $6, $7)';
 
-        // Prepare the SQL statement
-        $stmt = $this->conn->prepare("INSERT INTO `inquiries` (name, email, phone, subject, message, type, user_id) VALUES (?, ?, ?, ?, ?, ?, ?)");
-        if($stmt === false) {
-            $resp['msg'] = "Prepare failed: " . $this->conn->error;
-            return json_encode($resp);
+        $save = false;
+        if (DB_TYPE === 'mysql') {
+            $stmt = $this->conn->prepare($sql);
+            if($stmt === false) {
+                $resp['msg'] = "Prepare failed: " . $this->conn->error;
+                return json_encode($resp);
+            }
+            $stmt->bind_param("ssssssi", $name, $email, $phone, $subject, $message, $type, $user_id);
+            $save = $stmt->execute();
+            $stmt->close();
+        } else { // pgsql
+            $params = array($name, $email, $phone, $subject, $message, $type, $user_id);
+            $save = pg_query_params($this->conn, $sql, $params);
         }
 
-        // Bind parameters
-        $stmt->bind_param("ssssssi", $name, $email, $phone, $subject, $message, $type, $user_id);
-
-        if($stmt->execute()){
+        if($save){
             $resp['status'] = 'success';
             $resp['msg'] = "Your message has been sent successfully! We will get back to you as soon as possible.";
         } else {
             $resp['msg'] = "Failed to send message. Please try again later.";
         }
 
-        $stmt->close();
         return json_encode($resp);
     }
 }
 
-// This part handles the AJAX request from the contact form
 if(isset($_GET['f']) && !empty($_GET['f'])){
     $action = $_GET['f'];
-    $app = new Application();
+    $app = null;
+    try {
+        $app = new Application();
+    } catch (Exception $e) {
+        header('Content-Type: application/json');
+        echo json_encode([
+            'status' => 'failed',
+            'msg' => 'Server Error on init: ' . $e->getMessage()
+        ]);
+        exit;
+    }
     switch($action){
         case 'submit_inquiry':
             echo $app->submit_inquiry();
