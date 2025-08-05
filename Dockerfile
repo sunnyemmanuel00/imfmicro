@@ -1,8 +1,8 @@
 # Start with a base PHP image
 FROM php:8.1-apache
 
-# Install required PHP extensions
-RUN docker-php-ext-install mysqli pdo pdo_mysql
+# Install required PHP extensions, including PostgreSQL
+RUN docker-php-ext-install mysqli pdo pdo_mysql pgsql
 
 # Copy your application files into the container
 COPY . /var/www/html/
