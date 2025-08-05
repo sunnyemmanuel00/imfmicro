@@ -13,6 +13,10 @@ debug_log.txt
 *.bak
 *_BACKUP_*.php
 *_OLD.php
+*_WORKED.php
 
 # Ignore the .gcloudignore file since it's not needed for Render.
 .gcloudignore
+
+# Ignore sensitive Firebase credentials
+classes/firebase-service-account.json

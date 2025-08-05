@@ -1,10 +1,4 @@
 <?php
-// ===========================================================================
-// Account.php - Dual Database Compatibility
-// This file has been updated to work with both MySQL and PostgreSQL.
-// The database type is determined by the DB_TYPE constant in config.php.
-// ===========================================================================
-
 require_once(__DIR__ . '/../config.php');
 require_once(__DIR__ . '/DBConnection.php');
 
@@ -21,133 +15,89 @@ Class Account extends DBConnection {
 
     public function save_account(){
         try {
-            if (DB_TYPE === 'mysql') {
-                if ($this->conn->connect_error) {
-                    throw new Exception("Database connection was lost before saving.");
-                }
-            } elseif (DB_TYPE === 'pgsql') {
-                if (pg_connection_status($this->conn) !== PGSQL_CONNECTION_OK) {
-                    throw new Exception("Database connection was lost before saving.");
-                }
+            if ($this->conn === null) {
+                throw new Exception("Database connection was lost before saving.");
             }
 
             extract($_POST);
 
-            // Validate required fields
-            $required_fields = ['firstname', 'lastname', 'address', 'marital_status', 'gender', 'phone_number', 'date_of_birth', 'id_type', 'id_number', 'email'];
+            $required_fields = ['firstname', 'lastname', 'address', 'marital_status', 'gender', 'phone_number', 'date_of_birth', 'id_type', 'id_number', 'email', 'firebase_uid'];
             foreach($required_fields as $field){
                 if(!isset($$field) || empty($$field)){
                     throw new Exception(ucfirst(str_replace('_', ' ', $field)) . " is required.");
                 }
             }
-            
-            if(!isset($firebase_uid) || empty($firebase_uid)){
-                throw new Exception("Firebase User ID is required. Registration failed.");
-            }
 
-            // Check if email already exists
-            $check_email_sql = DB_TYPE === 'mysql' ? "SELECT `id` FROM `accounts` WHERE `email` = ?" : 'SELECT "id" FROM "accounts" WHERE "email" = $1';
-            $check_email_params = [DB_TYPE === 'mysql' ? 's' : null, $email];
+            $email_for_check = strtolower(trim($email));
             
-            $stmt = null;
-            if (DB_TYPE === 'mysql') {
-                $stmt = $this->conn->prepare($check_email_sql);
-                $stmt->bind_param(...$check_email_params);
-                $stmt->execute();
-                $result = $stmt->get_result();
-                if($result->num_rows > 0) {
+            if ($this->db_type === 'mysqli') {
+                $chk_stmt = $this->conn->prepare("SELECT `id` FROM `accounts` WHERE lower(email) = ?");
+                if (!$chk_stmt) { throw new Exception("Failed to prepare statement for email check: " . $this->conn->error); }
+                $chk_stmt->bind_param("s", $email_for_check);
+                $chk_stmt->execute();
+                $result = $chk_stmt->get_result();
+                if($result->num_rows > 0){
                     throw new Exception('This email address is already in our records.');
                 }
-                $stmt->close();
-            } elseif (DB_TYPE === 'pgsql') {
-                $result = pg_query_params($this->conn, $check_email_sql, array($email));
-                if ($result && pg_num_rows($result) > 0) {
+            } elseif ($this->db_type === 'pgsql') {
+                $chk_stmt = $this->conn->prepare("SELECT `id` FROM `accounts` WHERE lower(email) = ?");
+                if (!$chk_stmt) { throw new Exception("Failed to prepare statement for email check."); }
+                $chk_stmt->execute([$email_for_check]);
+                $result = $chk_stmt->fetch(PDO::FETCH_ASSOC);
+                if($result){
                     throw new Exception('This email address is already in our records.');
                 }
+            } else {
+                throw new Exception("Unsupported database type.");
             }
 
-            // Generate a unique account number
             $account_number = '';
-            do {
+            while(true){
                 $account_number = sprintf("%'.010d", mt_rand(0, 9999999999));
-                $check_acc_num_sql = DB_TYPE === 'mysql' ? "SELECT `id` FROM `accounts` WHERE `account_number` = ?" : 'SELECT "id" FROM "accounts" WHERE "account_number" = $1';
-                if (DB_TYPE === 'mysql') {
-                    $stmt = $this->conn->prepare($check_acc_num_sql);
-                    $stmt->bind_param('s', $account_number);
-                    $stmt->execute();
-                    $chk_acc_num = $stmt->get_result()->num_rows;
-                    $stmt->close();
-                } else { // pgsql
-                    $result = pg_query_params($this->conn, $check_acc_num_sql, array($account_number));
-                    $chk_acc_num = pg_num_rows($result);
+                
+                if ($this->db_type === 'mysqli') {
+                    $chk_acc_num = $this->conn->query("SELECT `id` FROM `accounts` WHERE `account_number` = '{$account_number}'")->num_rows;
+                } elseif ($this->db_type === 'pgsql') {
+                    $stmt_check = $this->conn->prepare("SELECT `id` FROM `accounts` WHERE `account_number` = ?");
+                    $stmt_check->execute([$account_number]);
+                    $chk_acc_num = $stmt_check->rowCount();
                 }
-            } while ($chk_acc_num > 0);
-
-            // Prepare the data for insertion
-            $columns = [];
-            $placeholders = [];
-            $values = [];
-            $param_index = 1;
-
-            foreach($_POST as $k => $v){
-                if(!in_array($k, ['password', 'confirm_password', 'action'])){
-                    $columns[] = DB_TYPE === 'mysql' ? "`{$k}`" : "\"{$k}\"";
-                    $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-                    $values[] = $v;
-                }
+                
+                if($chk_acc_num <= 0) break;
             }
-            
-            // Add fixed fields
-            $columns[] = DB_TYPE === 'mysql' ? "`firebase_uid`" : "\"firebase_uid\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-            $values[] = $firebase_uid;
 
-            $columns[] = DB_TYPE === 'mysql' ? "`account_number`" : "\"account_number\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-            $values[] = $account_number;
-
-            $columns[] = DB_TYPE === 'mysql' ? "`balance`" : "\"balance\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-            $values[] = 0;
-            
-            $columns[] = DB_TYPE === 'mysql' ? "`status`" : "\"status\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-            $values[] = 'Pending';
-            
-            $columns[] = DB_TYPE === 'mysql' ? "`login_type`" : "\"login_type\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-            $values[] = 2;
-            
-            $columns[] = DB_TYPE === 'mysql' ? "`first_login_done`" : "\"first_login_done\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
-            $values[] = 0;
-            
-            $columns[] = DB_TYPE === 'mysql' ? "`transaction_pin`" : "\"transaction_pin\"";
-            $placeholders[] = DB_TYPE === 'mysql' ? '?' : '$' . $param_index++;
             $plain_pin = str_pad(mt_rand(0, 99999), 5, '0', STR_PAD_LEFT);
-            $values[] = $plain_pin;
+            $sql = "INSERT INTO `accounts` (`firstname`, `lastname`, `address`, `marital_status`, `gender`, `phone_number`, `date_of_birth`, `id_type`, `id_number`, `email`, `firebase_uid`, `account_number`, `balance`, `status`, `login_type`, `first_login_done`, `transaction_pin`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+            
+            $status = 'Pending';
+            $login_type = 2;
+            $first_login_done = 0;
+            $balance = 0;
 
-            $sql = 'INSERT INTO ' . (DB_TYPE === 'mysql' ? '`accounts`' : '"accounts"') . ' (' . implode(', ', $columns) . ') VALUES (' . implode(', ', $placeholders) . ')';
-            $save = false;
-
-            if (DB_TYPE === 'mysql') {
-                $stmt = $this->conn->prepare($sql);
-                $types = str_repeat('s', count($values)); // Assuming all are strings for simplicity
-                $stmt->bind_param($types, ...$values);
-                $save = $stmt->execute();
-                $stmt->close();
-            } else { // pgsql
-                $save = pg_query_params($this->conn, $sql, $values);
+            if ($this->db_type === 'mysqli') {
+                $stmt_insert = $this->conn->prepare($sql);
+                if (!$stmt_insert) { throw new Exception("Failed to prepare insert statement: " . $this->conn->error); }
+                $stmt_insert->bind_param("sssssssssssisssis",
+                    $firstname, $lastname, $address, $marital_status, $gender, $phone_number, $date_of_birth, $id_type, $id_number, $email, $firebase_uid, $account_number, $balance, $status, $login_type, $first_login_done, $plain_pin
+                );
+                $save = $stmt_insert->execute();
+            } elseif ($this->db_type === 'pgsql') {
+                $stmt_insert = $this->conn->prepare($sql);
+                if (!$stmt_insert) { throw new Exception("Failed to prepare insert statement."); }
+                $save = $stmt_insert->execute([
+                    $firstname, $lastname, $address, $marital_status, $gender, $phone_number, $date_of_birth, $id_type, $id_number, $email, $firebase_uid, $account_number, $balance, $status, $login_type, $first_login_done, $plain_pin
+                ]);
+            } else {
+                throw new Exception("Unsupported database type.");
             }
 
             if($save){
                 return json_encode([
-                    'status' => 'success', 
-                    'msg' => 'Your application has been submitted for review. Your account number is: ' . $account_number
+                    'status' => 'success',
+                    'msg' => 'Your application has been submitted for review. You will receive an email once your account is approved. Your account number is: ' . $account_number
                 ]);
             } else {
-                $error = DB_TYPE === 'mysql' ? $this->conn->error : pg_last_error($this->conn);
-                throw new Exception("Failed to save to database: " . $error);
+                throw new Exception("Failed to save to database.");
             }
 
         } catch (Exception $e) {
@@ -162,40 +112,26 @@ Class Account extends DBConnection {
     }
     
     public function get_account_details_for_login() {
+        extract($_POST);
+        if(!isset($firebase_uid) || empty($firebase_uid)){
+            return json_encode(['status' => 'failed', 'msg' => "Firebase User ID is required."]);
+        }
+        
         try {
-            if (DB_TYPE === 'mysql') {
-                if ($this->conn->connect_error) {
-                    throw new Exception("Database connection lost.");
-                }
-            } else {
-                if (pg_connection_status($this->conn) !== PGSQL_CONNECTION_OK) {
-                    throw new Exception("Database connection lost.");
-                }
-            }
-
-            extract($_POST);
-            if(!isset($firebase_uid) || empty($firebase_uid)){
-                return json_encode(['status' => 'failed', 'msg' => "Firebase User ID is required."]);
-            }
-            
-            // Use prepared statement to prevent SQL injection
-            $sql = DB_TYPE === 'mysql' ? "SELECT `id`, `transaction_pin`, `first_login_done`, `status` FROM `accounts` WHERE `firebase_uid` = ?" : 'SELECT "id", "transaction_pin", "first_login_done", "status" FROM "accounts" WHERE "firebase_uid" = $1';
-            $account_data = null;
-
-            if (DB_TYPE === 'mysql') {
-                $stmt = $this->conn->prepare($sql);
-                $stmt->bind_param('s', $firebase_uid);
+            if ($this->db_type === 'mysqli') {
+                $stmt = $this->conn->prepare("SELECT id, transaction_pin, first_login_done, status FROM `accounts` WHERE `firebase_uid` = ?");
+                if (!$stmt) { throw new Exception("Failed to prepare statement: " . $this->conn->error); }
+                $stmt->bind_param("s", $firebase_uid);
                 $stmt->execute();
                 $result = $stmt->get_result();
-                if($result && $result->num_rows > 0) {
-                    $account_data = $result->fetch_assoc();
-                }
-                $stmt->close();
-            } else { // pgsql
-                $result = pg_query_params($this->conn, $sql, array($firebase_uid));
-                if($result && pg_num_rows($result) > 0) {
-                    $account_data = pg_fetch_assoc($result);
-                }
+                $account_data = $result->fetch_assoc();
+            } elseif ($this->db_type === 'pgsql') {
+                $stmt = $this->conn->prepare("SELECT id, transaction_pin, first_login_done, status FROM `accounts` WHERE `firebase_uid` = ?");
+                if (!$stmt) { throw new Exception("Failed to prepare statement."); }
+                $stmt->execute([$firebase_uid]);
+                $account_data = $stmt->fetch(PDO::FETCH_ASSOC);
+            } else {
+                throw new Exception("Unsupported database type.");
             }
 
             if($account_data) {
@@ -204,49 +140,39 @@ Class Account extends DBConnection {
                 return json_encode(['status' => 'failed', 'msg' => 'Account not found or not linked to Firebase UID.']);
             }
         } catch (Exception $e) {
-            error_log("Error in Account.php::get_account_details_for_login(): " . $e->getMessage());
-            return json_encode(['status' => 'failed', 'msg' => 'Server Error: ' . $e->getMessage()]);
+            error_log("Get Account Details Error: " . $e->getMessage());
+            return json_encode(['status' => 'error', 'msg' => 'A database error occurred.']);
         }
     }
 
     public function update_first_login_status() {
+        extract($_POST);
+        if(!isset($account_id) || empty($account_id)){
+            return json_encode(['status' => 'failed', 'msg' => "Account ID is required."]);
+        }
+        
         try {
-            if (DB_TYPE === 'mysql') {
-                if ($this->conn->connect_error) {
-                    throw new Exception("Database connection lost.");
-                }
-            } else {
-                if (pg_connection_status($this->conn) !== PGSQL_CONNECTION_OK) {
-                    throw new Exception("Database connection lost.");
-                }
-            }
-            
-            extract($_POST);
-            if(!isset($account_id) || empty($account_id)){
-                return json_encode(['status' => 'failed', 'msg' => "Account ID is required."]);
-            }
-
-            $sql = DB_TYPE === 'mysql' ? "UPDATE `accounts` SET `first_login_done` = 1 WHERE `id` = ?" : 'UPDATE "accounts" SET "first_login_done" = 1 WHERE "id" = $1';
-            $update = false;
-
-            if (DB_TYPE === 'mysql') {
-                $stmt = $this->conn->prepare($sql);
-                $stmt->bind_param('i', $account_id);
+            if ($this->db_type === 'mysqli') {
+                $stmt = $this->conn->prepare("UPDATE `accounts` SET `first_login_done` = 1 WHERE `id` = ?");
+                if (!$stmt) { throw new Exception("Failed to prepare statement: " . $this->conn->error); }
+                $stmt->bind_param("i", $account_id);
                 $update = $stmt->execute();
-                $stmt->close();
-            } else { // pgsql
-                $update = pg_query_params($this->conn, $sql, array($account_id));
+            } elseif ($this->db_type === 'pgsql') {
+                $stmt = $this->conn->prepare("UPDATE `accounts` SET `first_login_done` = 1 WHERE `id` = ?");
+                if (!$stmt) { throw new Exception("Failed to prepare statement."); }
+                $update = $stmt->execute([$account_id]);
+            } else {
+                throw new Exception("Unsupported database type.");
             }
 
             if($update){
                 return json_encode(['status' => 'success', 'msg' => 'First login status updated.']);
             } else {
-                $error = DB_TYPE === 'mysql' ? $this->conn->error : pg_last_error($this->conn);
-                throw new Exception("Failed to update first login status: " . $error);
+                return json_encode(['status' => 'failed', 'msg' => 'Failed to update first login status.']);
             }
         } catch (Exception $e) {
-            error_log("Error in Account.php::update_first_login_status(): " . $e->getMessage());
-            return json_encode(['status' => 'failed', 'msg' => 'Server Error: ' . $e->getMessage()]);
+            error_log("Update First Login Status Error: " . $e->getMessage());
+            return json_encode(['status' => 'error', 'msg' => 'A database error occurred.']);
         }
     }
 }
