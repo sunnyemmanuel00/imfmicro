@@ -4,6 +4,12 @@ ini_set('date.timezone','Asia/Manila');
 date_default_timezone_set('Asia/Manila');
 session_start();
 
+// =============================================================
+//  FIX: Define the database type for dual-compatibility.
+//  Use 'mysql' for local XAMPP and 'pgsql' for Render.
+// =============================================================
+define('DB_TYPE', 'mysql');
+
 require_once(__DIR__ . '/initialize.php');
 require_once(__DIR__ . '/classes/DBConnection.php');
 require_once(__DIR__ . '/classes/SystemSettings.php');
