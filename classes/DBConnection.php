@@ -10,41 +10,33 @@ class DBConnection{
     public function __construct(){
 
         if (!isset($this->conn)) {
-
-            // This allows us to catch connection errors instead of the script dying
             mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
 
             try {
-                // This checks if the code is running on Google App Engine
-                if (isset($_SERVER['GAE_ENV']) && $_SERVER['GAE_ENV'] === 'standard') {
-
-                    // --- LIVE GOOGLE CLOUD SQL SETTINGS ---
-                    $db_user = 'root'; 
-                    $db_pass = 'Dom@418nic'; // Your LIVE database password
-                    $db_name = 'banking_db'; 
-                    $db_socket = '/cloudsql/imfmicro:us-central1:imfmicro'; // Your instance connection name
-
-                    $this->conn = new mysqli(null, $db_user, $db_pass, $db_name, null, $db_socket);
-
+                // Check if environment variables are set for Render deployment
+                if (getenv('DB_HOST') !== false) {
+                    // --- RENDER DEPLOYMENT SETTINGS ---
+                    $db_host = getenv('DB_HOST');
+                    $db_user = getenv('DB_USER');
+                    $db_pass = getenv('DB_PASS');
+                    $db_name = getenv('DB_NAME');
+                    
+                    $this->conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
                 } else {
-
                     // --- LOCAL XAMPP DATABASE SETTINGS ---
                     $db_host = 'localhost';
                     $db_user = 'root';
-                    $db_pass = ''; // Your XAMPP password
+                    $db_pass = '';
                     $db_name = 'banking_db';
 
                     $this->conn = new mysqli($db_host, $db_user, $db_pass, $db_name);
                 }
             } catch (Exception $e) {
-                // CRITICAL FIX: Instead of die(), throw an exception.
-                // This prevents the script from halting with a non-JSON error.
                 throw new Exception('Database Connection Failed: ' . $e->getMessage());
             }
 
-            // Turn off strict reporting once connection is successful
             mysqli_report(MYSQLI_REPORT_OFF);
-        }       
+        }
     }
 
     public function __destruct(){
