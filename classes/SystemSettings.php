@@ -1,7 +1,7 @@
 <?php
 if(!class_exists('DBConnection')){
-    require_once(__DIR__ . '/../config.php'); 
-    require_once(__DIR__ . '/DBConnection.php'); 
+    require_once(__DIR__ . '/../config.php');
+    require_once(__DIR__ . '/DBConnection.php');
 }
 class SystemSettings extends DBConnection{
     public function __construct(){
@@ -11,47 +11,76 @@ class SystemSettings extends DBConnection{
         return($this->conn);
     }
     function load_system_info(){
-        if(!isset($_SESSION['system_info'])){ 
+        if(!isset($_SESSION['system_info'])){
             $sql = "SELECT * FROM system_info";
-            $qry = $this->conn->query($sql);
-            $_SESSION['system_info'] = []; 
-            while($row = $qry->fetch_assoc()){
-                $_SESSION['system_info'][$row['meta_field']] = $row['meta_value'];
+            $_SESSION['system_info'] = [];
+
+            if (getenv('DATABASE_URL') !== false) {
+                // PostgreSQL on Render
+                $qry = pg_query($this->conn, $sql);
+                while($row = pg_fetch_assoc($qry)){
+                    $_SESSION['system_info'][$row['meta_field']] = $row['meta_value'];
+                }
+            } else {
+                // MySQL on XAMPP
+                $qry = $this->conn->query($sql);
+                while($row = $qry->fetch_assoc()){
+                    $_SESSION['system_info'][$row['meta_field']] = $row['meta_value'];
+                }
             }
         }
     }
     function update_system_info(){
         $sql = "SELECT * FROM system_info";
-        $qry = $this->conn->query($sql);
-        $_SESSION['system_info'] = []; 
-        while($row = $qry->fetch_assoc()){
-            $_SESSION['system_info'][$row['meta_field']] = $row['meta_value'];
+        $_SESSION['system_info'] = [];
+
+        if (getenv('DATABASE_URL') !== false) {
+            // PostgreSQL on Render
+            $qry = pg_query($this->conn, $sql);
+            while($row = pg_fetch_assoc($qry)){
+                $_SESSION['system_info'][$row['meta_field']] = $row['meta_value'];
+            }
+        } else {
+            // MySQL on XAMPP
+            $qry = $this->conn->query($sql);
+            while($row = $qry->fetch_assoc()){
+                $_SESSION['system_info'][$row['meta_field']] = $row['meta_value'];
+            }
         }
         return true;
     }
     function update_settings_info(){
-        $stmt_update = $this->conn->prepare("UPDATE system_info SET meta_value = ? WHERE meta_field = ?");
-        $stmt_insert = $this->conn->prepare("INSERT INTO system_info (meta_value, meta_field) VALUES (?, ?)");
-
         foreach ($_POST as $key => $value) {
-            // --- THE DEFINITIVE FIX ---
-            // The logic for 'about_us' and 'privacy_policy' is removed from this loop
-            // to prevent the file_put_contents crash on the live server.
             if(!in_array($key, array("about_us", "privacy_policy", "img", "cover"))) {
-                $check_qry = $this->conn->query("SELECT COUNT(*) FROM system_info WHERE meta_field = '{$this->conn->real_escape_string($key)}'");
-                $exists = $check_qry->fetch_row()[0] > 0;
-
-                if ($exists) {
-                    $stmt_update->bind_param("ss", $value, $key);
-                    $stmt_update->execute();
+                if (getenv('DATABASE_URL') !== false) {
+                    // PostgreSQL on Render
+                    $check_qry = pg_query($this->conn, "SELECT COUNT(*) FROM system_info WHERE meta_field = '".pg_escape_string($this->conn, $key)."'");
+                    $exists = pg_fetch_row($check_qry)[0] > 0;
+                    if ($exists) {
+                        pg_query_params($this->conn, "UPDATE system_info SET meta_value = $1 WHERE meta_field = $2", array($value, $key));
+                    } else {
+                        pg_query_params($this->conn, "INSERT INTO system_info (meta_value, meta_field) VALUES ($1, $2)", array($value, $key));
+                    }
                 } else {
-                    $stmt_insert->bind_param("ss", $value, $key);
-                    $stmt_insert->execute();
+                    // MySQL on XAMPP
+                    $stmt_update = $this->conn->prepare("UPDATE system_info SET meta_value = ? WHERE meta_field = ?");
+                    $stmt_insert = $this->conn->prepare("INSERT INTO system_info (meta_value, meta_field) VALUES (?, ?)");
+
+                    $check_qry = $this->conn->query("SELECT COUNT(*) FROM system_info WHERE meta_field = '{$this->conn->real_escape_string($key)}'");
+                    $exists = $check_qry->fetch_row()[0] > 0;
+
+                    if ($exists) {
+                        $stmt_update->bind_param("ss", $value, $key);
+                        $stmt_update->execute();
+                    } else {
+                        $stmt_insert->bind_param("ss", $value, $key);
+                        $stmt_insert->execute();
+                    }
+                    if ($stmt_update) $stmt_update->close();
+                    if ($stmt_insert) $stmt_insert->close();
                 }
             }
         }
-        if ($stmt_update) $stmt_update->close();
-        if ($stmt_insert) $stmt_insert->close();
 
         // Handle image uploads (logo)
         if(isset($_FILES['img']) && $_FILES['img']['tmp_name'] != ''){
@@ -61,7 +90,11 @@ class SystemSettings extends DBConnection{
                 if(isset($_SESSION['system_info']['logo']) && is_file(__DIR__ . '/../'.$_SESSION['system_info']['logo'])) {
                     unlink(__DIR__ . '/../'.$_SESSION['system_info']['logo']);
                 }
-                $this->conn->query("UPDATE system_info set meta_value = '{$fname}' where meta_field = 'logo' ");
+                if (getenv('DATABASE_URL') !== false) {
+                    pg_query($this->conn, "UPDATE system_info set meta_value = '".pg_escape_string($this->conn, $fname)."' where meta_field = 'logo' ");
+                } else {
+                    $this->conn->query("UPDATE system_info set meta_value = '{$this->conn->real_escape_string($fname)}' where meta_field = 'logo' ");
+                }
             }
         }
         // Handle cover image uploads
@@ -72,10 +105,13 @@ class SystemSettings extends DBConnection{
                 if(isset($_SESSION['system_info']['cover']) && is_file(__DIR__ . '/../'.$_SESSION['system_info']['cover'])) {
                     unlink(__DIR__ . '/../'.$_SESSION['system_info']['cover']);
                 }
-                $this->conn->query("UPDATE system_info set meta_value = '{$fname}' where meta_field = 'cover' ");
+                if (getenv('DATABASE_URL') !== false) {
+                    pg_query($this->conn, "UPDATE system_info set meta_value = '".pg_escape_string($this->conn, $fname)."' where meta_field = 'cover' ");
+                } else {
+                    $this->conn->query("UPDATE system_info set meta_value = '{$this->conn->real_escape_string($fname)}' where meta_field = 'cover' ");
+                }
             }
         }
-        
         $update = $this->update_system_info();
         $flash = $this->set_flashdata('success','System Info Successfully Updated.');
         if($update && $flash){
@@ -149,3 +185,4 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST' && $action == 'update_settings') {
         exit;
     }
 }
+?>
