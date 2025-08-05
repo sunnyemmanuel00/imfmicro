@@ -1,7 +1,8 @@
 <nav class="main-header navbar navbar-expand-md navbar-light navbar-white">
     <div class="container">
         <a href="<?php echo base_url ?>" class="navbar-brand">
-            <img src="<?php echo validate_image($_settings->info('logo'))?>" alt="AdminLTE Logo" class="brand-image img-circle elevation-3" style="opacity: .8">
+            <!-- Corrected path for the logo. The dynamic call is replaced with a direct path. -->
+            <img src="<?php echo base_url . 'uploads/1626243720_bank.jpg' ?>" alt="AdminLTE Logo" class="brand-image img-circle elevation-3" style="opacity: .8">
             <span class="brand-text font-weight-light"><?php echo $_settings->info('short_name') ?></span>
         </a>
 
@@ -52,9 +53,7 @@
                         <i class="fas fa-user mr-2"></i> Account
                     </a>
                     <div class="dropdown-divider"></div>
-                    <a href="<?php echo base_url ?>classes/Login.php?f=logout" class="dropdown-item">
-                        <i class="fas fa-sign-out-alt mr-2"></i> Logout
-                    </a>
+                    <a class="dropdown-item" href="<?php echo base_url.'?f=logout' ?>"><span class="fas fa-sign-out-alt"></span> Logout</a>
                 </div>
             </li>
             <?php endif; ?>
