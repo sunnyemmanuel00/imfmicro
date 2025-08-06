@@ -2,8 +2,9 @@
 # Files to ignore for your banking project
 # ===============================================
 
-# Ignore the vendor directory. Render will install dependencies from composer.json.
-/vendor/
+# We are temporarily commenting out this line to ensure the vendor directory is deployed to Render.
+# The server is currently failing to install dependencies on its own, as seen in the PHP fatal error.
+# /vendor/
 
 # Ignore local editor and log files
 .vscode/
