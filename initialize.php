@@ -5,12 +5,10 @@ $dev_data = array('id'=>'-1','firstname'=>'Developer','lastname'=>'','username'=
 // This is the final, correct version that works everywhere.
 
 if(!defined('base_url')){
-    // Check if the code is running on the live Google App Engine server
-    if (isset($_SERVER['GAE_ENV']) && $_SERVER['GAE_ENV'] === 'standard') {
+    // Check if the code is running on the live Render server
+    if (getenv('RENDER_EXTERNAL_URL')) {
         // Define the base_url for the LIVE server
-        $protocol = (isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? "https" : "http");
-        $host = $_SERVER['HTTP_HOST'];
-        define('base_url', $protocol . "://" . $host . "/");
+        define('base_url', getenv('RENDER_EXTERNAL_URL') . '/');
     } else {
         // Define the base_url for your LOCAL XAMPP server
         define('base_url', 'http://localhost/banking/');
@@ -29,4 +27,4 @@ if(!defined('DB_USERNAME')) define('DB_USERNAME',"root");
 if(!defined('DB_PASSWORD')) define('DB_PASSWORD',""); 
 if(!defined('DB_NAME')) define('DB_NAME',"banking_db");
 
-?>
+ ?>
