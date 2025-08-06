@@ -1,48 +1,80 @@
 <section class="py-5">
-    <div class="container px-4 px-lg-5 mt-5">
-        <div class="row">
-            <div class="col-md-6 offset-md-3">
-                <div class="card rounded-0 shadow">
-                    <div class="card-header">
-                        <div class="card-title text-center">Login</div>
-                    </div>
-                    <div class="card-body">
-                        <form id="login-frm" action="">
-                            <div class="form-group">
-                                <label for="email" class="control-label">Email</label>
-                                <input type="email" id="email" name="email" class="form-control rounded-0" required>
-                            </div>
-                            <div class="form-group">
-                                <label for="password" class="control-label">Password</label>
-                                <div class="input-group">
-                                    <input type="password" id="password" name="password" class="form-control rounded-0" required>
-                                    <div class="input-group-append">
-                                        <span class="input-group-text toggle-password" style="cursor: pointer;">
-                                            <i class="fa fa-eye-slash"></i>
-                                        </span>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="form-group d-flex justify-content-end">
-                                <button class="btn btn-sm btn-primary col-4 rounded-0">Login</button>
-                            </div>
-                            <div class="form-group">
-                                <p class="text-center">Don't have an account? <a href="./?p=open_account">Open Account</a></p>
-                            </div>
-                        </form>
-
-                        <div id="loginProgressContainer" class="mb-3" style="display: none;">
-                            <p class="text-center text-muted mb-2">Authenticating and securing your session...</p>
-                            <div class="progress" style="height: 20px;">
-                                <div id="loginProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;">0%</div>
-                            </div>
-                        </div>
-                    </div>
+  <div class="container px-4 px-lg-5 mt-5">
+    <div class="row">
+      <div class="col-md-6 offset-md-3">
+        <div class="card rounded-0 shadow">
+          <div class="card-header">
+            <div class="card-title text-center">Login</div>
+          </div>
+          <div class="card-body">
+            <form id="login-frm" action="">
+              <div class="form-group">
+                <label for="email" class="control-label">Email</label>
+                <input type="email" id="email" name="email" class="form-control rounded-0" required>
+              </div>
+              <div class="form-group">
+                <label for="password" class="control-label">Password</label>
+                <div class="input-group">
+                  <input type="password" id="password" name="password" class="form-control rounded-0" required>
+                  <div class="input-group-append">
+                    <span class="input-group-text toggle-password" style="cursor: pointer;">
+                      <i class="fa fa-eye-slash"></i>
+                    </span>
+                  </div>
                 </div>
+              </div>
+              <div class="form-group d-flex justify-content-end">
+                <button class="btn btn-sm btn-primary col-4 rounded-0">Login</button>
+              </div>
+              <div class="form-group">
+                <p class="text-center">Don't have an account? <a href="./?p=open_account">Open Account</a></p>
+              </div>
+            </form>
+
+            <div id="loginProgressContainer" class="mb-3" style="display: none;">
+              <p class="text-center text-muted mb-2">Authenticating and securing your session...</p>
+              <div class="progress" style="height: 20px;">
+                <div id="loginProgressBar" class="progress-bar progress-bar-striped progress-bar-animated bg-primary" role="progressbar" style="width: 0%;">0%</div>
+              </div>
             </div>
+          </div>
         </div>
+      </div>
     </div>
+  </div>
 </section>
+<script>
+    // This script block is a fallback for local testing and provides the global
+    // firebase object that your `index.php` was originally expecting.
+    // It will be ignored on the live site when the module script below is used.
+    var firebaseConfig = {
+      apiKey: "AIzaSyAkHD7A-HnZYakoiV5YxIVJamEwMe2r86w",
+      authDomain: "usbmicro-ca116.firebaseapp.com",
+      projectId: "usbmicro-ca116",
+      storageBucket: "usbmicro-ca116.firebasestorage.app",
+      messagingSenderId: "774331717251",
+      appId: "1:774331717251:web:986a6350209aea275bedb6"
+    };
+
+    if (typeof firebase === 'undefined') {
+        const script1 = document.createElement('script');
+        script1.src = "https://www.gstatic.com/firebasejs/8.10.1/firebase-app.js";
+        document.head.appendChild(script1);
+        const script2 = document.createElement('script');
+        script2.src = "https://www.gstatic.com/firebasejs/8.10.1/firebase-auth.js";
+        document.head.appendChild(script2);
+        
+        script2.onload = function() {
+            if (typeof firebase !== 'undefined') {
+                firebase.initializeApp(firebaseConfig);
+                window.auth = firebase.auth();
+            }
+        };
+    } else {
+        firebase.initializeApp(firebaseConfig);
+        window.auth = firebase.auth();
+    }
+</script>
 
 <script type="module">
     import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
