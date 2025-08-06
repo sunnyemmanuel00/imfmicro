@@ -1,6 +1,7 @@
 <?php
 use Kreait\Firebase\Factory;
 use Kreait\Firebase\Exception\Auth\InvalidToken;
+use Kreait\Firebase\ServiceAccount; // Added this import for the new method
 
 class Login extends DBConnection {
     private $settings;
@@ -13,12 +14,12 @@ class Login extends DBConnection {
         ini_set('display_errors', 0);
 
         try {
-            // First, try to get the Firebase service account JSON from the environment variable
-            $firebaseConfigPath = getenv('FIREBASE_SERVICE_ACCOUNT_PATH');
-
-            if ($firebaseConfigPath !== false && !empty($firebaseConfigPath)) {
-                // Use the path from the environment variable (Render's secret file)
-                $factory = (new Factory)->withServiceAccount($firebaseConfigPath);
+            // Try to load credentials from an environment variable first (for Render)
+            $firebase_service_account_json = getenv('FIREBASE_CREDENTIALS');
+            
+            if ($firebase_service_account_json !== false && !empty($firebase_service_account_json)) {
+                // Use the JSON content directly from the environment variable
+                $factory = (new Factory())->withServiceAccount(ServiceAccount::fromValue($firebase_service_account_json));
                 $this->firebaseAuth = $factory->createAuth();
             } else {
                 // Fallback to the local file path (for local development)
@@ -27,7 +28,7 @@ class Login extends DBConnection {
                     $factory = (new Factory)->withServiceAccount($serviceAccountPath);
                     $this->firebaseAuth = $factory->createAuth();
                 } else {
-                    throw new Exception("Firebase service account configuration not found. Please ensure the FIREBASE_SERVICE_ACCOUNT_PATH environment variable is set or the firebase-service-account.json file exists.");
+                    throw new Exception("Firebase service account configuration not found. Please ensure the FIREBASE_CREDENTIALS environment variable is set or the firebase-service-account.json file exists.");
                 }
             }
         } catch (Throwable $e) {
@@ -186,7 +187,6 @@ class Login extends DBConnection {
         }
     }
 
-    // New helper function to update the first login status immediately
     public function update_first_login_status_immediate($user_id) {
         try {
             if ($this->db_type === 'mysqli') {
@@ -205,7 +205,6 @@ class Login extends DBConnection {
         }
     }
 
-    // The original update_first_login_status is still needed for the AJAX call
     public function update_first_login_status() {
         if (!$this->settings->userdata('account_id') || $this->settings->userdata('login_type') != 2) { 
             return json_encode(['status' => 'error', 'msg' => 'Unauthorized access.']); 
