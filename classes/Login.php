@@ -13,17 +13,21 @@ class Login extends DBConnection {
         ini_set('display_errors', 0);
 
         try {
-            $firebaseConfigJson = getenv('FIREBASE_SERVICE_ACCOUNT');
-            if ($firebaseConfigJson !== false && !empty($firebaseConfigJson)) {
-                $factory = (new Factory)->withServiceAccountJson($firebaseConfigJson);
+            // First, try to get the Firebase service account JSON from the environment variable
+            $firebaseConfigPath = getenv('FIREBASE_SERVICE_ACCOUNT_PATH');
+
+            if ($firebaseConfigPath !== false && !empty($firebaseConfigPath)) {
+                // Use the path from the environment variable (Render's secret file)
+                $factory = (new Factory)->withServiceAccount($firebaseConfigPath);
                 $this->firebaseAuth = $factory->createAuth();
             } else {
+                // Fallback to the local file path (for local development)
                 $serviceAccountPath = __DIR__ . '/firebase-service-account.json';
                 if (file_exists($serviceAccountPath)) {
                     $factory = (new Factory)->withServiceAccount($serviceAccountPath);
                     $this->firebaseAuth = $factory->createAuth();
                 } else {
-                    throw new Exception("Firebase service account configuration not found. Please ensure the FIREBASE_SERVICE_ACCOUNT environment variable is set or the firebase-service-account.json file exists.");
+                    throw new Exception("Firebase service account configuration not found. Please ensure the FIREBASE_SERVICE_ACCOUNT_PATH environment variable is set or the firebase-service-account.json file exists.");
                 }
             }
         } catch (Throwable $e) {
