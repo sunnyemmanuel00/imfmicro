@@ -44,13 +44,10 @@
     </div>
 </section>
 
-<!-- This is the ONLY script tag that should handle Firebase authentication. -->
-<!-- It uses the modern, module-based approach and correctly imports dependencies. -->
 <script type="module">
     import { initializeApp, getApps, getApp } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-app.js";
     import { getAuth, signInWithEmailAndPassword } from "https://www.gstatic.com/firebasejs/9.6.1/firebase-auth.js";
 
-    // Firebase configuration from your project
     const firebaseConfig = {
         apiKey: "AIzaSyAkHD7A-HnZYakoiV5YxIVJamEwMe2r86w",
         authDomain: "usbmicro-ca116.firebaseapp.com",
@@ -67,10 +64,15 @@
         app = getApp();
     }
     const auth = getAuth(app);
-    window.auth = auth; // Expose auth globally for other scripts if needed
+    window.auth = auth;
+
+    // Add this console.log to check if the jQuery document ready block executes
+    console.log("jQuery document ready block in internet_banking.php is attempting to execute."); 
 
     $(function() {
-        // Toggle password visibility
+        // Add this console.log to confirm the document ready block has fired
+        console.log("jQuery document ready block in internet_banking.php has executed."); 
+
         $(document).on('click', '.toggle-password', function() {
             var input = $(this).closest('.input-group').find('input');
             var icon = $(this).find('i');
@@ -83,9 +85,10 @@
             }
         });
 
-        // Handle login form submission
         $('#login-frm').submit(function(e) {
             e.preventDefault();
+            // Add this console.log to check if the submit handler is triggered
+            console.log("Login form submit handler triggered!"); 
             var _this = $(this);
             _this.hide();
             $('#loginProgressContainer').show();
@@ -98,11 +101,9 @@
             const email = $('#email').val();
             const password = $('#password').val();
 
-            // Firebase authentication
             signInWithEmailAndPassword(auth, email, password)
                 .then(userCredential => userCredential.user.getIdToken())
                 .then(idToken => {
-                    // Send ID token to your PHP backend
                     return $.ajax({
                         url: window._base_url_ + '?f=firebase_login_session',
                         method: 'POST',
@@ -114,7 +115,6 @@
                     ajax_response = resp;
                 })
                 .catch(error => {
-                    // Handle Firebase authentication errors
                     let msg = "An unexpected authentication error occurred.";
                     if (error.code) {
                         switch (error.code) {
@@ -137,7 +137,6 @@
                     ajax_call_done = true;
                 });
 
-            // Progress bar animation
             var interval = setInterval(function() {
                 progress++;
                 let percentage = Math.min(Math.floor((progress / 150) * 100), 100);
