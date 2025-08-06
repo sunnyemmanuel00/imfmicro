@@ -66,12 +66,21 @@
     const auth = getAuth(app);
     window.auth = auth;
 
-    // Add this console.log to check if the jQuery document ready block executes
-    console.log("jQuery document ready block in internet_banking.php is attempting to execute."); 
+    // --- IMPORTANT: Ensure jQuery is ready before using it ---
+    // This function will wait for jQuery to be fully loaded and the DOM ready.
+    function onJQueryReady(callback) {
+        if (typeof jQuery !== 'undefined' && typeof $ !== 'undefined') {
+            jQuery(document).ready(callback);
+        } else {
+            // If jQuery isn't ready yet, wait a bit and try again
+            setTimeout(() => onJQueryReady(callback), 50);
+        }
+    }
 
-    $(function() {
-        // Add this console.log to confirm the document ready block has fired
-        console.log("jQuery document ready block in internet_banking.php has executed."); 
+    onJQueryReady(function() {
+        console.log("jQuery is ready and internet_banking.php script is executing.");
+        // --- NEW LOG: Check if the form element is found ---
+        console.log("Length of #login-frm element found by jQuery:", $('#login-frm').length);
 
         $(document).on('click', '.toggle-password', function() {
             var input = $(this).closest('.input-group').find('input');
@@ -87,8 +96,7 @@
 
         $('#login-frm').submit(function(e) {
             e.preventDefault();
-            // Add this console.log to check if the submit handler is triggered
-            console.log("Login form submit handler triggered!"); 
+            console.log("Login form submit handler triggered!"); // Debug log
             var _this = $(this);
             _this.hide();
             $('#loginProgressContainer').show();
