@@ -6,9 +6,8 @@ RUN apt-get update && apt-get install -y \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install required PHP extensions, including PostgreSQL.
-# The `docker-php-ext-install` command should be used correctly.
-RUN docker-php-ext-install mysqli pdo pdo_mysql pdo_pgsql
+# Install required PHP extensions, including both PDO and the standard pgsql extension
+RUN docker-php-ext-install mysqli pdo pdo_mysql pdo_pgsql pgsql
 
 # Copy your application files into the container
 COPY . /var/www/html/
