@@ -1,6 +1,6 @@
 <?php
 use Kreait\Firebase\Factory;
-use Kreait\Firebase\Exception\Auth\InvalidToken;
+use Kreait\Firebase\Exception\Auth\FailedToVerifyToken;
 use Kreait\Firebase\ServiceAccount; // Added this import for the new method
 
 class Login extends DBConnection {
@@ -168,8 +168,6 @@ class Login extends DBConnection {
                     
                     $response = ['status' => 'success', 'first_login_done' => $userData['first_login_done']];
 
-                    // CRITICAL FIX: The update_first_login_status function needs to be called
-                    // when the user successfully logs in for the first time.
                     if ($userData['first_login_done'] == 0 && isset($userData['pin'])) { 
                         $this->update_first_login_status_immediate($userData['id']);
                         $response['pin'] = $userData['pin']; 
@@ -181,9 +179,17 @@ class Login extends DBConnection {
             } else { 
                 return json_encode(['status' => 'incorrect', 'msg' => 'Authenticated but account not found in banking system.']);
             }
+        } catch (FailedToVerifyToken $e) {
+            // This provides a much more specific error message for debugging.
+            $errorMessage = 'Firebase ID Token verification failed: ' . $e->getMessage();
+            error_log($errorMessage);
+            return json_encode(['status' => 'error', 'msg' => $errorMessage]);
+
         } catch (Throwable $e) {
-            error_log("Firebase login error: " . $e->getMessage());
-            return json_encode(['status' => 'error', 'msg' => 'An authentication error occurred.']);
+            // Catch any other exceptions
+            $errorMessage = 'An unexpected authentication error occurred: ' . $e->getMessage();
+            error_log($errorMessage);
+            return json_encode(['status' => 'error', 'msg' => $errorMessage]);
         }
     }
 
