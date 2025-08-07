@@ -1,11 +1,23 @@
 <?php
 require_once(__DIR__ . '/../../config.php');
 if(isset($_GET['id']) && $_GET['id'] > 0){
-    $qry = $conn->query("SELECT *,concat(firstname,' ',middlename,' ',lastname) as name from `accounts` where id = '{$_GET['id']}' ");
-    if($qry->num_rows > 0){
-        foreach($qry->fetch_assoc() as $k => $v){
-            $$k=$v;
+    try {
+        // Using a PDO prepared statement to prevent SQL injection
+        $stmt = $conn->prepare("SELECT * FROM `accounts` WHERE id = :id");
+        $stmt->bindParam(':id', $_GET['id'], PDO::PARAM_INT);
+        $stmt->execute();
+        if($stmt->rowCount() > 0){
+            $row = $stmt->fetch(PDO::FETCH_ASSOC);
+            foreach($row as $k => $v){
+                $$k=stripslashes($v);
+            }
+            // Concatenate name in PHP for display
+            $name = trim($firstname . ' ' . $middlename . ' ' . $lastname);
         }
+    } catch (PDOException $e) {
+        // In a production environment, you would log this error and show a generic message.
+        // For development, it's useful to see the error.
+        die("Database error: " . $e->getMessage());
     }
 }
 ?>
@@ -13,13 +25,13 @@ if(isset($_GET['id']) && $_GET['id'] > 0){
     <div class="callout callout-info">
         <dl>
             <dt>Account Holder:</dt>
-            <dd><?php echo isset($name) ? $name : "" ?></dd>
+            <dd><?php echo isset($name) ? htmlspecialchars($name) : "" ?></dd>
             <dt>Account Number:</dt>
-            <dd><?php echo isset($account_number) ? $account_number : "" ?></dd>
+            <dd><?php echo isset($account_number) ? htmlspecialchars($account_number) : "" ?></dd>
         </dl>
     </div>
     <form id="balance-modal-form">
-        <input type="hidden" name="account_id" value="<?php echo isset($id) ? $id : '' ?>">
+        <input type="hidden" name="account_id" value="<?php echo isset($id) ? htmlspecialchars($id) : '' ?>">
         <div class="form-group">
             <label for="transaction_type" class="control-label">Transaction Type</label>
             <select name="transaction_type" id="transaction_type" class="form-control form-control-sm" required>
