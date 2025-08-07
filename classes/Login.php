@@ -1,7 +1,7 @@
 <?php
 use Kreait\Firebase\Factory;
 use Kreait\Firebase\Exception\Auth\FailedToVerifyToken;
-use Kreait\Firebase\ServiceAccount; // Added this import for the new method
+use Kreait\Firebase\ServiceAccount;
 
 class Login extends DBConnection {
     private $settings;
@@ -172,6 +172,7 @@ class Login extends DBConnection {
                     
                     // The logic for pin and first_login_done is reinstated
                     if (isset($userData['first_login_done']) && $userData['first_login_done'] == 0 && isset($userData['pin'])) { 
+                        // Call the function to immediately update the status
                         $this->update_first_login_status_immediate($userData['id']);
                         $response['pin'] = $userData['pin']; 
                     }
