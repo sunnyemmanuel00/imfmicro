@@ -127,8 +127,8 @@ class Login extends DBConnection {
                 $result = $stmt->get_result();
                 $userData = $result->fetch_assoc();
             } elseif ($this->db_type === 'pgsql') {
-                // Corrected query for PostgreSQL, replacing backticks with double quotes
-                $stmt = $this->conn->prepare("SELECT *, \"status\", \"first_login_done\", \"transaction_pin\" AS \"pin\" FROM \"accounts\" WHERE firebase_uid = ? OR lower(email) = ?");
+                // Corrected query for PostgreSQL, with all necessary columns and using double quotes
+                $stmt = $this->conn->prepare("SELECT *, \"status\", \"first_login_done\", \"transaction_pin\" AS \"pin\" FROM \"accounts\" WHERE \"firebase_uid\" = ? OR lower(\"email\") = ?");
                 if (!$stmt) { throw new Exception("Failed to prepare statement."); }
                 $stmt->execute([$uid, $email_for_query]);
                 $userData = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -169,8 +169,9 @@ class Login extends DBConnection {
                     }
                     
                     $response = ['status' => 'success', 'first_login_done' => $userData['first_login_done']];
-
-                    if ($userData['first_login_done'] == 0 && isset($userData['pin'])) { 
+                    
+                    // The logic for pin and first_login_done is reinstated
+                    if (isset($userData['first_login_done']) && $userData['first_login_done'] == 0 && isset($userData['pin'])) { 
                         $this->update_first_login_status_immediate($userData['id']);
                         $response['pin'] = $userData['pin']; 
                     }
