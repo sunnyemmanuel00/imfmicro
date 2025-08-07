@@ -127,7 +127,8 @@ class Login extends DBConnection {
                 $result = $stmt->get_result();
                 $userData = $result->fetch_assoc();
             } elseif ($this->db_type === 'pgsql') {
-                $stmt = $this->conn->prepare("SELECT *, `status`, `first_login_done`, `transaction_pin` AS `pin` FROM `accounts` WHERE firebase_uid = ? OR lower(email) = ?");
+                // Corrected query for PostgreSQL, replacing backticks with double quotes
+                $stmt = $this->conn->prepare("SELECT *, \"status\", \"first_login_done\", \"transaction_pin\" AS \"pin\" FROM \"accounts\" WHERE firebase_uid = ? OR lower(email) = ?");
                 if (!$stmt) { throw new Exception("Failed to prepare statement."); }
                 $stmt->execute([$uid, $email_for_query]);
                 $userData = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -159,7 +160,8 @@ class Login extends DBConnection {
                                 $stmt_update_uid->execute();
                             }
                         } elseif ($this->db_type === 'pgsql') {
-                            $stmt_update_uid = $this->conn->prepare("UPDATE `accounts` SET `firebase_uid` = ? WHERE `id` = ?");
+                            // Corrected update query for PostgreSQL
+                            $stmt_update_uid = $this->conn->prepare("UPDATE \"accounts\" SET \"firebase_uid\" = ? WHERE \"id\" = ?");
                             if ($stmt_update_uid) { 
                                 $stmt_update_uid->execute([$uid, $userData['id']]);
                             }
@@ -201,7 +203,8 @@ class Login extends DBConnection {
                 $stmt->bind_param("i", $user_id);
                 $stmt->execute();
             } elseif ($this->db_type === 'pgsql') {
-                $stmt = $this->conn->prepare("UPDATE `accounts` SET `first_login_done` = 1 WHERE `id` = ?");
+                // Corrected update query for PostgreSQL
+                $stmt = $this->conn->prepare("UPDATE \"accounts\" SET \"first_login_done\" = 1 WHERE \"id\" = ?");
                 if (!$stmt) { throw new Exception("Failed to prepare statement."); }
                 $stmt->execute([$user_id]);
             }
@@ -224,7 +227,8 @@ class Login extends DBConnection {
                 $stmt->bind_param("i", $user_id);
                 $update = $stmt->execute();
             } elseif ($this->db_type === 'pgsql') {
-                $stmt = $this->conn->prepare("UPDATE `accounts` SET `first_login_done` = 1 WHERE `id` = ?");
+                // Corrected update query for PostgreSQL
+                $stmt = $this->conn->prepare("UPDATE \"accounts\" SET \"first_login_done\" = 1 WHERE \"id\" = ?");
                 if (!$stmt) { throw new Exception("Failed to prepare statement."); }
                 $update = $stmt->execute([$user_id]);
             } else {
