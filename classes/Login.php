@@ -15,7 +15,17 @@ class Login extends DBConnection {
   try {
    // CRITICAL FIX: The code was looking for 'FIREBASE_SERVICE_ACCOUNT'
    // but the variable on Render is named 'FIREBASE_CREDENTIALS'.
+   
+   // MODIFICATION START:
+   // Use a more robust method to get environment variables.
+   // getenv() can fail in certain server configurations.
+   // We will now check $_SERVER as a fallback.
    $firebaseConfigJson = getenv('FIREBASE_CREDENTIALS');
+   if ($firebaseConfigJson === false) {
+    $firebaseConfigJson = $_SERVER['FIREBASE_CREDENTIALS'] ?? false;
+   }
+   // MODIFICATION END
+
    if ($firebaseConfigJson !== false && !empty($firebaseConfigJson)) {
     $factory = (new Factory)->withServiceAccountJson($firebaseConfigJson);
     $this->firebaseAuth = $factory->createAuth();
