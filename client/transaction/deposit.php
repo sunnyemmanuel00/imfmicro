@@ -28,17 +28,15 @@ if(!isset($conn) || !isset($_settings)){
                 <h3 class="card-title">Funds Transfer/Deposit</h3>
             </div>
             <div class="card-body">
-                <!-- Tab Navigation -->
                 <ul class="nav nav-tabs" id="myTab" role="tablist">
                     <li class="nav-item" role="presentation">
-                        <a class="nav-link active" id="deposit-tab-nav" data-toggle="tab" href="#deposit-tab-content" role="tab" aria-controls="deposit" aria-selected="true">Deposit (from Linked Account)</a>
+                        <a class="nav-link active" id="deposit-tab-nav" data-toggle="tab" href="#deposit-tab-content" role="tab" aria-controls="deposit-tab-content" aria-selected="true">Deposit (from Linked Account)</a>
                     </li>
                     <li class="nav-item" role="presentation">
-                        <a class="nav-link" id="transfer-tab-nav" data-toggle="tab" href="#transfer-tab-content" role="tab" aria-controls="transfer" aria-selected="false">Transfer (to Linked Account)</a>
+                        <a class="nav-link" id="transfer-tab-nav" data-toggle="tab" href="#transfer-tab-content" role="tab" aria-controls="transfer-tab-content" aria-selected="false">Transfer (to Linked Account)</a>
                     </li>
                 </ul>
                 <div class="tab-content" id="myTabContent">
-                    <!-- Deposit Tab Pane -->
                     <div class="tab-pane fade show active" id="deposit-tab-content" role="tabpanel" aria-labelledby="deposit-tab-nav">
                         <form action="" id="deposit-form" class="py-3">
                             <div class="form-group row">
@@ -47,8 +45,11 @@ if(!isset($conn) || !isset($_settings)){
                                     <select name="source_linked_account_id" id="source_linked_account_id" class="form-control form-control-sm rounded-0 select2" required>
                                         <option value="" disabled selected>-- Select Linked Account --</option>
                                         <?php
-                                        $linked_accounts = $conn->query("SELECT * FROM `user_linked_accounts` WHERE user_id = '{$_settings->userdata('id')}' ORDER BY `account_label` ASC");
-                                        while($row = $linked_accounts->fetch_assoc()):
+                                        // Use PDO for fetching linked accounts
+                                        $linked_accounts = $conn->prepare("SELECT * FROM \"user_linked_accounts\" WHERE user_id = :user_id ORDER BY \"account_label\" ASC");
+                                        $linked_accounts->bindValue(':user_id', $_settings->userdata('id'), PDO::PARAM_INT);
+                                        $linked_accounts->execute();
+                                        while($row = $linked_accounts->fetch(PDO::FETCH_ASSOC)):
                                             $display_name = $row['account_label'] . " (" . $row['account_number'] . " -- " . $row['bank_name'] . ")";
                                         ?>
                                         <option value="<?= $row['id'] ?>"><?= $display_name ?></option>
@@ -75,42 +76,43 @@ if(!isset($conn) || !isset($_settings)){
                             </div>
                         </form>
                     </div>
-                    <!-- Transfer Tab Pane -->
                     <div class="tab-pane fade" id="transfer-tab-content" role="tabpanel" aria-labelledby="transfer-tab-nav">
                         <form action="" id="transfer-form" class="py-3">
+                               <div class="form-group row">
+                                 <label for="destination_linked_account_id" class="col-lg-3 col-md-4 col-sm-12 col-form-label">Destination Linked Account</label>
+                                 <div class="col-lg-5 col-md-6 col-sm-12">
+                                     <select name="destination_linked_account_id" id="destination_linked_account_id" class="form-control form-control-sm rounded-0 select2" required>
+                                         <option value="" disabled selected>-- Select Linked Account --</option>
+                                          <?php
+                                              // Re-fetch linked accounts for the second dropdown using PDO
+                                              $linked_accounts_transfer = $conn->prepare("SELECT * FROM \"user_linked_accounts\" WHERE user_id = :user_id ORDER BY \"account_label\" ASC");
+                                              $linked_accounts_transfer->bindValue(':user_id', $_settings->userdata('id'), PDO::PARAM_INT);
+                                              $linked_accounts_transfer->execute();
+                                              while($row = $linked_accounts_transfer->fetch(PDO::FETCH_ASSOC)):
+                                                  $display_name = $row['account_label'] . " (" . $row['account_number'] . " -- " . $row['bank_name'] . ")";
+                                          ?>
+                                         <option value="<?= $row['id'] ?>"><?= $display_name ?></option>
+                                         <?php endwhile; ?>
+                                     </select>
+                                 </div>
+                             </div>
                              <div class="form-group row">
-                                <label for="destination_linked_account_id" class="col-lg-3 col-md-4 col-sm-12 col-form-label">Destination Linked Account</label>
-                                <div class="col-lg-5 col-md-6 col-sm-12">
-                                    <select name="destination_linked_account_id" id="destination_linked_account_id" class="form-control form-control-sm rounded-0 select2" required>
-                                        <option value="" disabled selected>-- Select Linked Account --</option>
-                                         <?php
-                                            if(isset($linked_accounts) && $linked_accounts->num_rows > 0)
-                                                $linked_accounts->data_seek(0);
-                                            while($row = $linked_accounts->fetch_assoc()):
-                                                $display_name = $row['account_label'] . " (" . $row['account_number'] . " -- " . $row['bank_name'] . ")";
-                                        ?>
-                                        <option value="<?= $row['id'] ?>"><?= $display_name ?></option>
-                                        <?php endwhile; ?>
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="form-group row">
-                                <label for="amount_transfer" class="col-lg-3 col-md-4 col-sm-12 col-form-label">Transfer Amount</label>
-                                <div class="col-lg-5 col-md-6 col-sm-12">
-                                    <input type="number" step="any" class="form-control form-control-sm rounded-0 text-right" id="amount_transfer" name="amount_transfer" required>
-                                </div>
-                            </div>
-                             <div class="form-group row">
-                                <label for="transfer_transaction_pin" class="col-lg-3 col-md-4 col-sm-12 col-form-label">Transaction PIN</label>
-                                <div class="col-lg-5 col-md-6 col-sm-12">
-                                    <div class="input-group">
-                                        <input type="password" class="form-control form-control-sm rounded-0" id="transfer_transaction_pin" name="transaction_pin" maxlength="5" pattern="\d{5}" title="Please enter a 5-digit transaction PIN" required>
-                                        <div class="input-group-append">
-                                            <span class="input-group-text toggle-pin" style="cursor: pointer;"><i class="fa fa-eye-slash"></i></span>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
+                                 <label for="amount_transfer" class="col-lg-3 col-md-4 col-sm-12 col-form-label">Transfer Amount</label>
+                                 <div class="col-lg-5 col-md-6 col-sm-12">
+                                     <input type="number" step="any" class="form-control form-control-sm rounded-0 text-right" id="amount_transfer" name="amount_transfer" required>
+                                 </div>
+                             </div>
+                              <div class="form-group row">
+                                 <label for="transfer_transaction_pin" class="col-lg-3 col-md-4 col-sm-12 col-form-label">Transaction PIN</label>
+                                 <div class="col-lg-5 col-md-6 col-sm-12">
+                                     <div class="input-group">
+                                         <input type="password" class="form-control form-control-sm rounded-0" id="transfer_transaction_pin" name="transaction_pin" maxlength="5" pattern="\d{5}" title="Please enter a 5-digit transaction PIN" required>
+                                         <div class="input-group-append">
+                                             <span class="input-group-text toggle-pin" style="cursor: pointer;"><i class="fa fa-eye-slash"></i></span>
+                                         </div>
+                                     </div>
+                                 </div>
+                             </div>
                         </form>
                     </div>
                 </div>
@@ -122,7 +124,6 @@ if(!isset($conn) || !isset($_settings)){
     </div>
 </div>
 
-<!-- Progress Bar Modal -->
 <div class="modal fade" id="progress-modal" tabindex="-1" role="dialog" aria-labelledby="progressModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false">
   <div class="modal-dialog modal-dialog-centered" role="document">
     <div class="modal-content">
@@ -145,6 +146,12 @@ if(!isset($conn) || !isset($_settings)){
         $('#source_linked_account_id, #destination_linked_account_id').select2({
             placeholder: "Select Linked Account Here",
             width: '100%'
+        });
+
+        // Bootstrap tab activation logic
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+          // You can add logic here to run when a tab is shown
+          console.log('Tab shown:', $(e.target).text());
         });
 
         // Universal PIN toggle logic for any .toggle-pin button
@@ -226,26 +233,20 @@ if(!isset($conn) || !isset($_settings)){
                     setTimeout(function(){
                         $('#progress-modal').modal('hide');
                         if(resp.status == 'success'){
-                            var success_msg = "";
-                            if (url.includes('deposit_from_linked_account')) {
-                                success_msg = 'Deposit Successful';
-                            } else if (url.includes('transfer_to_linked_account')) {
-                                success_msg = 'Transfer Successful';
-                            }
-                            _el.addClass('alert-success').text(success_msg);
+                            _el.addClass('alert-success').text(resp.msg);
                             _this.prepend(_el);
                             _el.show('slow');
-                            setTimeout(() => { location.reload() }, 60000);
+                            setTimeout(() => { location.reload() }, 2000);
                         }else if(!!resp.msg){
                             _el.addClass('alert-danger').text(resp.msg);
                              _this.prepend(_el);
                             _el.show('slow');
-                             $('#process-transaction-btn').prop('disabled',false).text('Process Transaction');
+                            $('#process-transaction-btn').prop('disabled',false).text('Process Transaction');
                         }else{
                             _el.addClass('alert-danger').text("An unknown error occurred.");
                              _this.prepend(_el);
                             _el.show('slow');
-                             $('#process-transaction-btn').prop('disabled',false).text('Process Transaction');
+                            $('#process-transaction-btn').prop('disabled',false).text('Process Transaction');
                         }
                     }, duration);
                 }

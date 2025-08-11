@@ -1,12 +1,29 @@
 <?php 
-$user_qry = $conn->query("SELECT * FROM `accounts` where id ='".$_settings->userdata('account_id')."'");
-if($user_qry->num_rows > 0){
-    $user_data = $user_qry->fetch_assoc();
-    foreach($user_data as $k => $v){
-        $meta[$k] = $v;
-    }
+// Corrected code to use PostgreSQL syntax and prepared statements
+$user_data = []; // Initialize an empty array for user data
+try {
+    // Use a prepared statement to prevent SQL injection
+    $stmt = $conn->prepare("SELECT * FROM \"accounts\" WHERE id = ?");
+    $stmt->execute([$_settings->userdata('account_id')]);
+    $user_data = $stmt->fetch(PDO::FETCH_ASSOC);
+    $stmt->closeCursor();
+} catch (PDOException $e) {
+    // Log the error to the server's error log
+    error_log("Database Error in user/index.php: " . $e->getMessage());
+    // Optionally, display a user-friendly error message
+    echo "<div class='alert alert-danger'>A database error occurred. Please try again later.</div>";
+    // To see the detailed error, you can uncomment the line below for debugging.
+    // echo $e->getMessage();
+}
+
+// Assign fetched data to the meta array if it exists
+if($user_data){
+    $meta = $user_data;
+} else {
+    $meta = [];
 }
 ?>
+
 <?php if($_settings->chk_flashdata('success')): ?>
 <script>
     alert_toast("<?php echo $_settings->flashdata('success') ?>",'success')
@@ -75,41 +92,42 @@ if($user_qry->num_rows > 0){
             </div>
         </form>
     </div>
-</div><script>
-	$('#manage-user').submit(function(e){
-		e.preventDefault();
-		start_loader();
-		$('#msg').html(''); // Clear previous error messages
-		$.ajax({
-			url:_base_url_+'classes/Master.php?f=save_account',
-			data: new FormData($(this)[0]),
-			cache: false,
-			contentType: false,
-			processData: false,
-			method: 'POST',
-			type: 'POST',
-			dataType: 'json',
-			error: err=>{
-				console.log(err)
-				alert_toast("An error occured",'error');
-				end_loader();
-			},
-			success:function(resp){
-				if(resp.status == 'success'){
-					// Show success message
-					alert_toast("Profile successfully updated.", 'success');
-					// Reload the page after 1.5 seconds to show new name in header
-					setTimeout(function(){
-						location.reload();
-					}, 1500);
-				}else if(!!resp.msg){
-					$('#msg').html('<div class="alert alert-danger">'+resp.msg+'</div>');
-					end_loader();
-				}else{
-					$('#msg').html('<div class="alert alert-danger">An error occurred</div>');
-					end_loader();
-				}
-			}
-		})
-	})
+</div>
+<script>
+    $('#manage-user').submit(function(e){
+        e.preventDefault();
+        start_loader();
+        $('#msg').html(''); // Clear previous error messages
+        $.ajax({
+            url:_base_url_+'classes/Master.php?f=save_account',
+            data: new FormData($(this)[0]),
+            cache: false,
+            contentType: false,
+            processData: false,
+            method: 'POST',
+            type: 'POST',
+            dataType: 'json',
+            error: err=>{
+                console.log(err)
+                alert_toast("An error occured",'error');
+                end_loader();
+            },
+            success:function(resp){
+                if(resp.status == 'success'){
+                    // Show success message
+                    alert_toast("Profile successfully updated.", 'success');
+                    // Reload the page after 1.5 seconds to show new name in header
+                    setTimeout(function(){
+                        location.reload();
+                    }, 1500);
+                }else if(!!resp.msg){
+                    $('#msg').html('<div class="alert alert-danger">'+resp.msg+'</div>');
+                    end_loader();
+                }else{
+                    $('#msg').html('<div class="alert alert-danger">An error occurred</div>');
+                    end_loader();
+                }
+            }
+        })
+    })
 </script>

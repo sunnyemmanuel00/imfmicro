@@ -1,11 +1,17 @@
-<?php if($_settings->chk_flashdata('success')): ?>
+<?php 
+// Corrected path to include config.php.
+// This path goes up two directories to the root 'banking' folder.
+require_once(__DIR__ . '/../../config.php'); 
+
+if ($_settings->chk_flashdata('success')): ?>
 <script>
-    alert_toast("<?php echo $_settings->flashdata('success') ?>",'success')
+    alert_toast("<?php echo $_settings->flashdata('success'); ?>", 'success');
 </script>
-<?php endif;?>
+<?php endif; ?>
+
 <div class="card card-outline card-primary">
     <div class="card-header">
-        <h3 class="card-title">All Transactions</h3>
+        <h3 class="card-title">List of All Transactions</h3>
     </div>
     <div class="card-body">
         <div class="container-fluid">
@@ -13,121 +19,262 @@
                 <thead>
                     <tr>
                         <th class="text-center">#</th>
-                        <th class="text-nowrap">Date & Time</th>
+                        <th>Date & Time</th>
                         <th>Transaction Code</th>
-                        <th>Account #</th>
                         <th>Account Holder</th>
-                        <th>Type</th>
-                        <th>Sender Account #</th>
-                        <th>Receiver Account #</th>
-                        <th class="text-nowrap">Amount</th>
-                        <th>Details</th>
+                        <th>Transaction Type</th>
+                        <th>Status</th>
+                        <th class="text-right">Amount</th>
+                        <th>Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     <?php 
                     $i = 1;
-                    // Updated query to select all new columns (t.*) and include account details (a.*)
-                    $qry = $conn->query("SELECT t.*, a.account_number AS primary_account_number, concat(a.lastname,', ',a.firstname,' ',a.middlename) as account_holder_name FROM `transactions` t INNER JOIN `accounts` a ON a.id = t.account_id ORDER BY unix_timestamp(t.date_created) DESC ");
-                    
-                    while($row = $qry->fetch_assoc()):
-                        $amount = $row['amount'];
-                        $db_type = $row['type']; // Numeric type from DB: 1=Cash in, 2=Withdraw, 3=transfer
-                        $remarks = $row['remarks'];
-                        $transaction_code = $row['transaction_code'] ?? 'N/A';
-                        $sender_acc_num = $row['sender_account_number'] ?? 'N/A';
-                        $receiver_acc_num = $row['receiver_account_number'] ?? 'N/A';
+                    $combined_data = [];
+                    try {
+                        // Query for COMPLETED transactions from the 'transactions' table
+                        $query_completed = "
+                            SELECT 
+                                t.id,
+                                t.date_created,
+                                t.transaction_code,
+                                t.transaction_type,
+                                t.amount,
+                                t.status,
+                                a.account_number,
+                                CONCAT(a.firstname, ' ', a.lastname) as account_holder_name 
+                            FROM 
+                                transactions t
+                            INNER JOIN 
+                                accounts a ON t.account_id = a.id
+                        ";
+                        $stmt_completed = $conn->prepare($query_completed);
+                        $stmt_completed->execute();
 
-                        $amount_class = ''; 
-                        $transaction_display_type = ''; // Textual type
-                        $transaction_details = ''; 
-                        $icon = ''; 
+                        while($row = $stmt_completed->fetch(PDO::FETCH_ASSOC)){
+                            $row['is_pending'] = false;
+                            $combined_data[] = $row;
+                        }
 
-                        // Determine display values based on transaction type
-                        if($db_type == 1){ // 1 = Cash in (Deposit)
-                            $amount_class = 'text-success'; 
-                            $icon = '<i class="fas fa-arrow-alt-circle-down text-success"></i> '; 
-                            $transaction_display_type = "Deposit";
-                            $transaction_details = "Deposit";
-                            if (!empty($sender_acc_num) && $sender_acc_num != "CASH" && $sender_acc_num != "N/A") { 
-                                $transaction_details .= " from Account: " . $sender_acc_num;
-                            }
-                            if(!empty($remarks) && $remarks != 'Deposit'){ 
-                                $transaction_details .= " (" . $remarks . ")";
-                            }
-                        } elseif($db_type == 2){ // 2 = Withdraw
-                            $amount_class = 'text-danger'; 
-                            $icon = '<i class="fas fa-arrow-alt-circle-up text-danger"></i> '; 
-                            $transaction_display_type = "Withdrawal";
-                            $transaction_details = "Withdrawal";
-                            if(!empty($remarks) && $remarks != 'Withdraw'){
-                                $transaction_details .= " (" . $remarks . ")";
-                            }
-                        } elseif($db_type == 3){ // 3 = Transfer
-                            $icon = '<i class="fas fa-exchange-alt text-warning"></i> '; 
-                            $transaction_display_type = "Transfer";
-                            $transaction_details = "Transfer";
+                        // Query for PENDING transactions from the 'pending_transactions' table
+                        // Replaced pt.transaction_code with a placeholder since the column does not exist
+                        $query_pending = "
+                            SELECT 
+                                pt.id,
+                                pt.timestamp as date_created,
+                                'N/A' as transaction_code,
+                                'transfer_external_debit' as transaction_type,
+                                pt.amount,
+                                pt.status,
+                                pt.sender_id as account_id,
+                                a.account_number,
+                                CONCAT(a.firstname, ' ', a.lastname) as account_holder_name 
+                            FROM 
+                                pending_transactions pt
+                            INNER JOIN 
+                                accounts a ON pt.sender_id = a.id
+                        ";
+                        $stmt_pending = $conn->prepare($query_pending);
+                        $stmt_pending->execute();
 
-                            // Admin view shows both sides clearly
-                            $current_user_acc = $row['primary_account_number']; // The account_id column is now `primary_account_number` from the join
+                        while($row = $stmt_pending->fetch(PDO::FETCH_ASSOC)){
+                            $row['is_pending'] = true;
+                            $combined_data[] = $row;
+                        }
 
-                            if ($sender_acc_num == $current_user_acc) { // If the joined account is the sender
-                                $amount_class = 'text-danger'; // Outgoing from this account
-                                $transaction_details = "Outgoing Transfer to " . $receiver_acc_num;
-                            } elseif ($receiver_acc_num == $current_user_acc) { // If the joined account is the receiver
-                                $amount_class = 'text-success'; // Incoming to this account
-                                $icon = '<i class="fas fa-arrow-alt-circle-down text-success"></i> '; 
-                                $transaction_details = "Incoming Transfer from " . $sender_acc_num;
-                            } else {
-                                // Fallback for transfers where neither sender/receiver is the primary account_id (shouldn't happen with correct logic)
-                                $amount_class = '';
-                                $transaction_details = "Transfer (Internal)";
+                        // Sort the combined data by date in descending order
+                        usort($combined_data, function($a, $b) {
+                            return strtotime($b['date_created']) - strtotime($a['date_created']);
+                        });
+
+                        foreach($combined_data as $row):
+                            $is_pending = $row['is_pending'];
+                            
+                            // Determine status badge
+                            $status_badge = '';
+                            switch (strtolower($row['status'] ?? '')) {
+                                case 'pending':
+                                    $status_badge = '<span class="badge badge-warning">Pending</span>';
+                                    break;
+                                case 'completed':
+                                    $status_badge = '<span class="badge badge-success">Completed</span>';
+                                    break;
+                                case 'declined':
+                                    $status_badge = '<span class="badge badge-danger">Declined</span>';
+                                    break;
+                                default:
+                                    $status_badge = '<span class="badge badge-secondary">' . htmlspecialchars($row['status']) . '</span>';
                             }
                             
-                            if(!empty($remarks) && $remarks != 'Transfer'){
-                                $transaction_details .= " (" . $remarks . ")";
+                            // Determine transaction type display
+                            $type_display = '';
+                            $amount_class = '';
+                            $ttype = $row['transaction_type'] ?? 'N/A';
+                            if (strpos($ttype, 'deposit') !== false) {
+                                $type_display = '<i class="fas fa-arrow-down text-success"></i> Deposit';
+                                $amount_class = 'text-success';
+                            } elseif (strpos($ttype, 'withdraw') !== false) {
+                                $type_display = '<i class="fas fa-arrow-up text-danger"></i> Withdrawal';
+                                $amount_class = 'text-danger';
+                            } elseif (strpos($ttype, 'transfer') !== false) {
+                                if (strpos($ttype, 'debit') !== false || strpos($ttype, 'external') !== false) {
+                                    $type_display = '<i class="fas fa-exchange-alt text-danger"></i> Transfer (Out)';
+                                    $amount_class = 'text-danger';
+                                } else {
+                                    $type_display = '<i class="fas fa-exchange-alt text-success"></i> Transfer (In)';
+                                    $amount_class = 'text-success';
+                                }
                             }
-                        } else {
-                            // Default fallback for unknown types
-                            $transaction_display_type = "N/A";
-                            $transaction_details = $remarks;
-                        }
                     ?>
                         <tr>
                             <td class="text-center"><?php echo $i++; ?></td>
-                            <td class="text-nowrap"><?php echo date("M d, Y h:i A", strtotime($row['date_created'])) ?></td>
-                            <td><?php echo $transaction_code ?></td>
-                            <td><?php echo $row['primary_account_number'] ?></td>
-                            <td><?php echo $row['account_holder_name'] ?></td>
-                            <td class="text-nowrap"><?php echo $icon . $transaction_display_type ?></td>
-                            <td><?php echo $sender_acc_num ?></td>
-                            <td><?php echo $receiver_acc_num ?></td>
-                            <td class='text-right <?php echo $amount_class ?>'>
-                                <?php 
-                                    // Display amount with +/- sign for clarity based on transaction type for the primary account
-                                    if(($db_type == 1) || ($db_type == 3 && $receiver_acc_num == $row['primary_account_number'])){ // Deposit or Incoming Transfer
-                                        echo '+ ' . number_format($amount, 2);
-                                    } else { // Withdrawal or Outgoing Transfer
-                                        echo '- ' . number_format($amount, 2);
-                                    }
-                                ?>
+                            <td><?php echo date("M d, Y h:i A", strtotime($row['date_created'])); ?></td>
+                            <td><?php echo htmlspecialchars($row['transaction_code'] ?? 'N/A'); ?></td>
+                            <td><?php echo htmlspecialchars($row['account_holder_name'] . ' (' . $row['account_number'] . ')'); ?></td>
+                            <td><?php echo $type_display; ?></td>
+                            <td class="text-center"><?php echo $status_badge; ?></td>
+                            <td class="text-right <?php echo $amount_class; ?>"><?php echo number_format($row['amount'], 2); ?></td>
+                            <td class="text-center">
+                                <button type="button" class="btn btn-flat btn-default btn-sm dropdown-toggle dropdown-icon" data-toggle="dropdown">
+                                    Action
+                                    <span class="sr-only">Toggle Dropdown</span>
+                                </button>
+                                <div class="dropdown-menu" role="menu">
+                                    <a class="dropdown-item view_transaction" href="javascript:void(0)" data-id="<?php echo $row['id']; ?>"><span class="fa fa-eye text-dark"></span> View</a>
+                                    <div class="dropdown-divider"></div>
+                                    <a class="dropdown-item edit_transaction" href="javascript:void(0)" data-id="<?php echo $row['id']; ?>"><span class="fa fa-edit text-primary"></span> Edit</a>
+                                    <div class="dropdown-divider"></div>
+                                    <?php if ($is_pending): ?>
+                                        <a class="dropdown-item approve_transaction" href="javascript:void(0)" data-id="<?php echo $row['id']; ?>"><span class="fa fa-check text-success"></span> Approve</a>
+                                        <div class="dropdown-divider"></div>
+                                        <a class="dropdown-item decline_transaction" href="javascript:void(0)" data-id="<?php echo $row['id']; ?>"><span class="fa fa-times text-danger"></span> Decline</a>
+                                        <div class="dropdown-divider"></div>
+                                    <?php endif; ?>
+                                    <a class="dropdown-item delete_transaction" href="javascript:void(0)" data-id="<?php echo $row['id']; ?>"><span class="fa fa-trash text-danger"></span> Delete</a>
+                                </div>
                             </td>
-                            <td><?php echo $transaction_details ?></td>
                         </tr>
-                    <?php endwhile; ?>
-                    <?php if($qry->num_rows <= 0): ?>
-                        <tr>
-                            <td colspan="10" class="text-center">No transactions found.</td>
-                        </tr>
-                    <?php endif; ?>
+                    <?php 
+                        endforeach;
+                    } catch (PDOException $e) {
+                        echo "<tr><td colspan='8' class='text-center'>Error fetching data: " . htmlspecialchars($e->getMessage()) . "</td></tr>";
+                    }
+                    ?>
                 </tbody>
             </table>
         </div>
     </div>
 </div>
 <script>
-    var indiList; // This variable name might be a leftover from previous code. Consider renaming to `transactionTable` for clarity.
-    $(document).ready(function(){
-        $('#transaction-list').dataTable(); // Changed ID to transaction-list for clarity
-    })
+$(document).ready(function(){
+    $('#transaction-list').dataTable({
+        "columnDefs": [
+            { "orderable": false, "targets": 7 }
+        ]
+    });
+
+    $('.view_transaction').click(function(){
+        uni_modal("<i class='fa fa-eye'></i> Transaction Details", "transaction/view_transaction.php?id=" + $(this).attr('data-id'), "large");
+    });
+
+    $('.edit_transaction').click(function(){
+        uni_modal("<i class='fa fa-edit'></i> Edit Transaction", "transaction/manage_transaction.php?id=" + $(this).attr('data-id'), "mid-large");
+    });
+
+    $('.approve_transaction').click(function(){
+        _conf("Are you sure you want to approve this transaction?", "approve_transaction", [$(this).attr('data-id')]);
+    });
+    
+    $('.decline_transaction').click(function(){
+        _conf("Are you sure you want to decline this transaction?", "decline_transaction_prompt", [$(this).attr('data-id')]);
+    });
+
+    $('.delete_transaction').click(function(){
+        _conf("Are you sure to delete this transaction permanently?", "delete_transaction", [$(this).attr('data-id')]);
+    });
+});
+
+function approve_transaction(id){
+    start_loader();
+    $.ajax({
+        url: _base_url_ + "classes/Master.php?f=approve_transaction",
+        method: "POST",
+        data: { transaction_id: id },
+        dataType: "json",
+        error: err => {
+            console.log(err);
+            alert_toast("An error occurred.", 'error');
+            end_loader();
+        },
+        success: function(resp){
+            if(resp.status == 'success'){
+                location.reload();
+            } else if(!!resp.msg){
+                alert_toast(resp.msg, 'error');
+            } else {
+                alert_toast("An unknown error occurred.", 'error');
+            }
+            end_loader();
+        }
+    });
+}
+
+function decline_transaction_prompt(id){
+    _prompt(function(reason){
+        if(reason){
+            decline_transaction(id, reason);
+        }
+    }, "Please enter the reason for declining this transaction:", "Decline Reason", "");
+}
+
+function decline_transaction(id, reason){
+    start_loader();
+    $.ajax({
+        url: _base_url_ + "classes/Master.php?f=decline_transaction",
+        method: "POST",
+        data: { transaction_id: id, reason: reason },
+        dataType: "json",
+        error: err => {
+            console.log(err);
+            alert_toast("An error occurred.", 'error');
+            end_loader();
+        },
+        success: function(resp){
+            if(resp.status == 'success'){
+                location.reload();
+            } else if(!!resp.msg){
+                alert_toast(resp.msg, 'error');
+            } else {
+                alert_toast("An unknown error occurred.", 'error');
+            }
+            end_loader();
+        }
+    });
+}
+
+function delete_transaction(id){
+    start_loader();
+    $.ajax({
+        url: _base_url_ + "classes/Master.php?f=delete_transaction",
+        method: "POST",
+        data: { id: id },
+        dataType: "json",
+        error: err => {
+            console.log(err);
+            alert_toast("An error occurred.", 'error');
+            end_loader();
+        },
+        success: function(resp){
+            if(resp.status == 'success'){
+                location.reload();
+            } else if(!!resp.msg){
+                alert_toast(resp.msg, 'error');
+            } else {
+                alert_toast("An unknown error occurred.", 'error');
+            }
+            end_loader();
+        }
+    });
+}
 </script>

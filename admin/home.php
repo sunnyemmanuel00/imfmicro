@@ -1,61 +1,94 @@
-<?php
-// Note: This assumes $conn is a valid PDO object.
-?>
-<h1 class="text-dark">Welcome to <?php echo $_settings->info('name') ?></h1>
-<?php
-// Initialize variables to 0
-$total_accounts = 0;
-$total_balance = 0;
-
-// Get total number of accounts
-try {
-    // Using PDO to count the number of rows
-    $query_accounts = $conn->query("SELECT count(id) FROM accounts");
-    $total_accounts = $query_accounts->fetchColumn(); // Fetches a single column from the next row of a result set
-} catch (PDOException $e) {
-    // Handle query error, though in most cases a count will succeed
-    error_log("Failed to count accounts: " . $e->getMessage());
-}
-
-// Get total accounts balance
-try {
-    // Using PDO to get the sum of all balances
-    $query_balance = $conn->query("SELECT sum(balance) as total FROM accounts");
-    $result_balance = $query_balance->fetch(PDO::FETCH_ASSOC);
-
-    // Safely check if the value exists and is not null before formatting
-    if ($result_balance && isset($result_balance['total'])) {
-        $total_balance = $result_balance['total'];
+<?php 
+// Check if the flashdata success message exists and display an alert
+if($_settings->chk_flashdata('success')): ?>
+<script>
+    alert_toast("<?php echo $_settings->flashdata('success') ?>",'success')
+</script>
+<?php endif;?>
+<style>
+    /* Custom styles for dashboard info cards */
+    #dashboard-widgets .info-box{
+        box-shadow: 0 0 1px rgb(0 0 0 / 13%), 0 1px 3px rgb(0 0 0 / 20%);
+        border-radius: 10px;
     }
-} catch (PDOException $e) {
-    // Handle query error
-    error_log("Failed to get total balance: " . $e->getMessage());
-}
-?>
-<hr>
-<div class="container-fluid">
-    <div class="row">
-        <div class="col-12 col-sm-6 col-md-3">
-            <div class="info-box">
-                <span class="info-box-icon bg-info elevation-1"><i class="fas fa-id-card"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Total Accounts</span>
-                    <span class="info-box-box">
-                        <?php echo number_format($total_accounts); ?>
-                    </span>
-                </div>
-            </div>
-        </div>
-        <div class="col-12 col-sm-6 col-md-3">
-            <div class="info-box mb-3">
-                <span class="info-box-icon bg-warning elevation-1"><i class="fas fa-money-bill"></i></span>
-                <div class="info-box-content">
-                    <span class="info-box-text">Total Accounts Balance</span>
-                    <span class="info-box-number">
-                        <?php echo number_format($total_balance, 2); ?>
-                    </span>
-                </div>
+</style>
+<div class="content-header">
+    <div class="container-fluid">
+        <div class="row mb-2">
+            <div class="col-sm-6">
+                <h1 class="m-0">Welcome to - IMF Micro Finance Bank</h1>
             </div>
         </div>
     </div>
 </div>
+<section class="content" id="dashboard-widgets">
+    <div class="container-fluid">
+        <div class="row">
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="info-box">
+                    <span class="info-box-icon bg-info elevation-1"><i class="fas fa-users"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Total Accounts</span>
+                        <span class="info-box-number">
+                            <?php 
+                            // Use PDO to fetch the count of accounts
+                            try {
+                                // Corrected query for PostgreSQL
+                                $result = $conn->query("SELECT COUNT(id) FROM \"accounts\"");
+                                // Fetch the first column of the first row
+                                $row = $result->fetch(PDO::FETCH_NUM);
+                                echo htmlspecialchars($row[0]);
+                            } catch (PDOException $e) {
+                                // Display a user-friendly error message
+                                echo "Error fetching data: " . htmlspecialchars($e->getMessage());
+                            }
+                            ?>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="info-box mb-3">
+                    <span class="info-box-icon bg-danger elevation-1"><i class="fas fa-money-bill-wave"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Total Balance</span>
+                        <span class="info-box-number">
+                            <?php 
+                            // Use PDO to fetch the sum of all account balances
+                            try {
+                                // Corrected query for PostgreSQL
+                                $result = $conn->query("SELECT SUM(balance) FROM \"accounts\"");
+                                $row = $result->fetch(PDO::FETCH_NUM);
+                                echo number_format(htmlspecialchars($row[0]), 2);
+                            } catch (PDOException $e) {
+                                echo "Error fetching data: " . htmlspecialchars($e->getMessage());
+                            }
+                            ?>
+                        </span>
+                    </div>
+                </div>
+            </div>
+            <div class="col-12 col-sm-6 col-md-3">
+                <div class="info-box mb-3">
+                    <span class="info-box-icon bg-success elevation-1"><i class="fas fa-th-list"></i></span>
+                    <div class="info-box-content">
+                        <span class="info-box-text">Transactions</span>
+                        <span class="info-box-number">
+                            <?php 
+                            // Use PDO to count the number of transactions
+                            try {
+                                // Corrected query for PostgreSQL
+                                $result = $conn->query("SELECT COUNT(id) FROM \"transactions\"");
+                                $row = $result->fetch(PDO::FETCH_NUM);
+                                echo htmlspecialchars($row[0]);
+                            } catch (PDOException $e) {
+                                echo "Error fetching data: " . htmlspecialchars($e->getMessage());
+                            }
+                            ?>
+                        </span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>

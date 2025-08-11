@@ -2,7 +2,7 @@
 <?php require_once(__DIR__ . '/auth.php'); ?>
 <?php 
 // ====================== START: CRITICAL ROUTER FIX ======================
-// This check ensures that only the requested page content is returned for AJAX calls.
+// This block ensures that only the requested page content is returned for AJAX calls.
 // It prevents the entire HTML template from being loaded into the modal.
 if(isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUESTED_WITH']) == 'xmlhttprequest') {
     $page = isset($_GET['page']) ? $_GET['page'] : 'home';
@@ -11,6 +11,9 @@ if(isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUE
         case 'accounts/manage_balance':
         case 'accounts/view_transactions':
         case 'inquiries/view_inquiry':
+        // ADDED: Cases for transactions modals to ensure they load correctly.
+        case 'transaction/view_transaction':
+        case 'transaction/manage_transaction':
             // Directly include the modal content page without the surrounding template.
             include __DIR__ . '/' . $page . '.php';
             break;
@@ -32,63 +35,64 @@ if(isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUE
   <div class="wrapper">
   <?php require_once(__DIR__ . '/inc/topBarNav.php'); ?>
   <?php require_once(__DIR__ . '/inc/navigation.php'); ?>
-       
+        
   <?php 
     // This determines which page to show. It defaults to 'home' after login.
     $page = isset($_GET['page']) ? $_GET['page'] : 'home'; 
   ?>
    <div class="content-wrapper pt-3" style="min-height: 567.854px;">
   
-        <section class="content text-dark">
-     <div class="container-fluid">
-      <?php 
-       // This router now includes the missing page for managing accounts.
-       switch($page){
-        case 'home':
-          include __DIR__ . '/home.php';
-          break;
-        case 'accounts':
-          include __DIR__ . '/accounts/index.php';
-          break;
-        case 'accounts/manage_account':
-          include __DIR__ . '/accounts/manage_account.php';
-          break;
-        case 'accounts/manage_balance': // Case for balance modal
-          include __DIR__ . '/accounts/manage_balance.php';
-          break;
-        case 'accounts/view_transactions': // Case for transactions modal
-          include __DIR__ . '/accounts/view_transactions.php';
-          break;
-        case 'transactions':
-          include __DIR__ . '/transactions/index.php';
-          break;
-        case 'inquiries':
-          include __DIR__ . '/inquiries/index.php';
-          break;
-        case 'inquiries/view_inquiry': // Case for inquiries modal
-          include __DIR__ . '/inquiries/view_inquiry.php';
-          break;
-        case 'user':
-          if(file_exists(__DIR__ . '/user/index.php')){
-            include __DIR__ . '/user/index.php';
-          } else {
-            include __DIR__ . '/404.html';
-          }
-          break;
-        case 'system_info':
-          if(file_exists(__DIR__ . '/system_info/index.php')){
-            include __DIR__ . '/system_info/index.php';
-          } else {
-            include __DIR__ . '/404.html';
-          }
-          break;
-        default:
-          include __DIR__ . '/404.html';
-          break;
-       }
-       // ========================= END OF FIX ==========================
-      ?>
-     </div>
+    <section class="content text-dark">
+   <div class="container-fluid">
+   <?php 
+    // This router now includes the missing page for managing accounts.
+    switch($page){
+     case 'home':
+      include __DIR__ . '/home.php';
+      break;
+     case 'accounts':
+      include __DIR__ . '/accounts/index.php';
+      break;
+     case 'accounts/manage_account':
+      include __DIR__ . '/accounts/manage_account.php';
+      break;
+     case 'accounts/manage_balance': // Case for balance modal
+      include __DIR__ . '/accounts/manage_balance.php';
+      break;
+     case 'accounts/view_transactions': // Case for transactions modal
+      include __DIR__ . '/accounts/view_transactions.php';
+      break;
+     // CORRECTED: The new case to handle the main transactions page.
+     // It uses the correct directory name 'transaction' instead of 'transactions'.
+     case 'transaction':
+      include __DIR__ . '/transaction/index.php';
+      break;
+     case 'inquiries':
+      include __DIR__ . '/inquiries/index.php';
+      break;
+     case 'inquiries/view_inquiry': // Case for inquiries modal
+      include __DIR__ . '/inquiries/view_inquiry.php';
+      break;
+     case 'user':
+      if(file_exists(__DIR__ . '/user/index.php')){
+        include __DIR__ . '/user/index.php';
+      } else {
+        include __DIR__ . '/404.html';
+      }
+      break;
+     case 'system_info':
+      if(file_exists(__DIR__ . '/system_info/index.php')){
+        include __DIR__ . '/system_info/index.php';
+      } else {
+        include __DIR__ . '/404.html';
+      }
+      break;
+     default:
+      include __DIR__ . '/404.html';
+      break;
+    }
+    ?>
+   </div>
     </section>
     </div>
    <?php require_once(__DIR__ . '/inc/footer.php'); ?>
@@ -128,7 +132,7 @@ if(isset($_SERVER['HTTP_X_REQUESTED_WITH']) && strtolower($_SERVER['HTTP_X_REQUE
       </div>
     </div>
    </div>
-      <div class="modal fade" id="confirm_modal" role='dialog'>
+    <div class="modal fade" id="confirm_modal" role='dialog'>
     <div class="modal-dialog modal-md modal-dialog-centered" role="document">
      <div class="modal-content">
       <div class="modal-header"><h5 class="modal-title">Confirmation</h5></div>

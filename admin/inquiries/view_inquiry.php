@@ -1,21 +1,38 @@
 <?php
-require_once(__DIR__ . '/../../config.php');
+// require_once is not necessary if the connection is already available via the main index.php
 if(isset($_GET['id'])){
-    $qry = $conn->query("SELECT * FROM `inquiries` where id = '{$_GET['id']}'");
-    if($qry->num_rows > 0){
-        foreach($qry->fetch_array() as $k => $v){
-            if(!is_numeric($k))
-            $$k = $v;
+    try {
+        // Use a prepared statement to safely handle the user input
+        $inquiry_stmt = $conn->prepare('SELECT * FROM "inquiries" WHERE id = :id');
+        $inquiry_stmt->bindParam(':id', $_GET['id'], PDO::PARAM_INT);
+        $inquiry_stmt->execute();
+        
+        // Fetch the single row
+        $row = $inquiry_stmt->fetch(PDO::FETCH_ASSOC);
+
+        if($row) {
+            // Extract the fetched data into variables
+            foreach($row as $k => $v){
+                if(!is_numeric($k))
+                $$k = $v;
+            }
+        
+            // Mark the message as "Read" by updating its status
+            // Use a prepared statement for the update as well
+            // Corrected: Set status to TRUE instead of 1 to match the boolean datatype in PostgreSQL
+            $update_stmt = $conn->prepare('UPDATE "inquiries" set status = TRUE where id = :id');
+            $update_stmt->bindParam(':id', $_GET['id'], PDO::PARAM_INT);
+            $update_stmt->execute();
         }
+    } catch (PDOException $e) {
+        echo "Error fetching inquiry: " . htmlspecialchars($e->getMessage());
     }
-    // Mark the message as "Read" by updating its status
-    $conn->query("UPDATE `inquiries` set status = 1 where id = '{$_GET['id']}'");
 }
 ?>
 <style>
     #uni_modal .modal-content {
         background-color: #212529; /* Bootstrap's standard dark color */
-        color: #f8f9fa;           /* A light off-white color for text */
+        color: #f8f9fa;            /* A light off-white color for text */
     }
     #uni_modal .modal-header {
         border-bottom: 1px solid #495057; /* A lighter border for visibility */

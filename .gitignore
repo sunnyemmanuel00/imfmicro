@@ -16,6 +16,12 @@ debug_log.txt
 *_OLD.php
 *_WORKED.php
 
+# Ignore database dump and SQL backup files
+*.sql
+banking_db2.sql
+Postgresql_banking_database3.sql
+banking_database.sql
+
 # Ignore the .gcloudignore file since it's not needed for Render.
 .gcloudignore
 

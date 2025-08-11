@@ -146,10 +146,7 @@ class Login extends DBConnection {
           $this->settings->set_userdata('account_id', $userData['id']);
           $this->settings->set_userdata('firebase_uid', $uid);
           $this->settings->set_userdata('login_type', 2);
-          // *** MODIFICATION START ***
-          // Use the fetched boolean value directly for the session
           $this->settings->set_userdata('first_login_done', $userData['first_login_done']);
-          // *** MODIFICATION END ***
           
           if (empty($userData['firebase_uid'])) {
             if ($this->db_type === 'mysqli') {
@@ -168,13 +165,10 @@ class Login extends DBConnection {
           
           $response = ['status' => 'success', 'first_login_done' => $userData['first_login_done']];
 
-          // *** MODIFICATION START ***
-          // Check for the boolean value `false` instead of the numeric `0`
-          if ($userData['first_login_done'] === false && isset($userData['pin'])) { 
+          if ($userData['first_login_done'] == 0 && isset($userData['pin'])) { 
             $this->update_first_login_status_immediate($userData['id']);
             $response['pin'] = $userData['pin']; 
           }
-          // *** MODIFICATION END ***
           return json_encode($response);
         } else { 
           return json_encode(['status' => 'incorrect', 'msg' => 'Account found, but not a client account.']); 
@@ -196,17 +190,11 @@ class Login extends DBConnection {
         $stmt->bind_param("i", $user_id);
         $stmt->execute();
       } elseif ($this->db_type === 'pgsql') {
-        // *** MODIFICATION START ***
-        // Use the boolean value `true` in the update query
-        $stmt = $this->conn->prepare('UPDATE "accounts" SET "first_login_done" = true WHERE "id" = ?');
+        $stmt = $this->conn->prepare('UPDATE "accounts" SET "first_login_done" = 1 WHERE "id" = ?');
         if (!$stmt) { throw new Exception("Failed to prepare statement."); }
         $stmt->execute([$user_id]);
-        // *** MODIFICATION END ***
       }
-      // *** MODIFICATION START ***
-      // Update session variable with the boolean value `true`
-      $this->settings->set_userdata('first_login_done', true);
-      // *** MODIFICATION END ***
+      $this->settings->set_userdata('first_login_done', 1);
     } catch (Exception $e) {
       error_log("Immediate Update First Login Status Error: " . $e->getMessage());
     }
@@ -225,21 +213,15 @@ class Login extends DBConnection {
         $stmt->bind_param("i", $user_id);
         $update = $stmt->execute();
       } elseif ($this->db_type === 'pgsql') {
-        // *** MODIFICATION START ***
-        // Use the boolean value `true` in the update query
-        $stmt = $this->conn->prepare('UPDATE "accounts" SET "first_login_done" = true WHERE "id" = ?');
+        $stmt = $this->conn->prepare('UPDATE "accounts" SET "first_login_done" = 1 WHERE "id" = ?');
         if (!$stmt) { throw new Exception("Failed to prepare statement."); }
         $update = $stmt->execute([$user_id]);
-        // *** MODIFICATION END ***
       } else {
         throw new Exception("Unsupported database type.");
       }
 
       if($update){
-        // *** MODIFICATION START ***
-        // Update session variable with the boolean value `true`
-        $this->settings->set_userdata('first_login_done', true);
-        // *** MODIFICATION END ***
+        $this->settings->set_userdata('first_login_done', 1);
         return json_encode(['status' => 'success']);
       } else {
         return json_encode(['status' => 'failed', 'msg' => 'Failed to update first login status.']);
@@ -261,4 +243,3 @@ switch ($action) {
   case 'firebase_login_session': echo $auth->firebase_login_session(); break;
   case 'update_first_login_status': echo $auth->update_first_login_status(); break;
 }
-?>

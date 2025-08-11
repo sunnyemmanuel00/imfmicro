@@ -18,15 +18,17 @@ if(isset($_GET['id'])){
     }
     
     if (isset($conn)) {
-        $qry = $conn->query("SELECT * FROM `user_linked_accounts` WHERE id = '{$id}' AND user_id = '{$user_id}'");
+        // Corrected SQL query for PostgreSQL by replacing backticks with double quotes
+        $qry = $conn->query("SELECT * FROM \"user_linked_accounts\" WHERE id = '{$id}' AND user_id = '{$user_id}'");
     } else {
         echo "<script> alert_toast('Database connection not available. Please refresh.','error'); </script>";
         echo "<script> $('.modal').modal('hide'); </script>";
         exit;
     }
 
-    if($qry->num_rows > 0){
-        $res = $qry->fetch_array();
+    // Corrected logic: Use rowCount() for PDOStatement instead of num_rows
+    if($qry->rowCount() > 0){
+        $res = $qry->fetch(PDO::FETCH_ASSOC); // Use PDO's fetch method
         foreach($res as $k => $v){
             if(!is_numeric($k)){
                 $$k = $v;
@@ -248,7 +250,7 @@ if(isset($_GET['id'])){
             }
         }
         toggleExternalAccountFields(); // Initial call to set visibility based on loaded data
-         updatePinLabel();
+        updatePinLabel();
 
 
         $('#linked-account-form').submit(function(e){

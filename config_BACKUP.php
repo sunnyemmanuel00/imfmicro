@@ -4,27 +4,32 @@ ini_set('date.timezone','Asia/Manila');
 date_default_timezone_set('Asia/Manila');
 session_start();
 
-require_once('initialize.php');
-require_once('classes/DBConnection.php');
-require_once('classes/SystemSettings.php');
+// =============================================================
+//  FIX: Define the database type for dual-compatibility.
+//  Use 'mysql' for local XAMPP and 'pgsql' for Render.
+// =============================================================
+define('DB_TYPE', 'mysql');
+
+require_once(__DIR__ . '/initialize.php');
+require_once(__DIR__ . '/classes/DBConnection.php');
+require_once(__DIR__ . '/classes/SystemSettings.php');
 $db = new DBConnection;
 $conn = $db->conn;
 
 function redirect($url=''){
-	if(!empty($url))
-	echo '<script>location.href="'.base_url .$url.'"</script>';
+    if(!empty($url))
+    echo '<script>location.href="'.base_url .$url.'"</script>';
 }
 function validate_image($file){
-	if(!empty($file)){
-			// exit;
-		if(is_file(base_app.$file)){
-			return base_url.$file;
-		}else{
-			return base_url.'dist/img/no-image-available.png';
-		}
-	}else{
-		return base_url.'dist/img/no-image-available.png';
-	}
+    if(!empty($file)){
+        if(is_file(base_app.$file)){
+            return base_url.$file;
+        }else{
+            return base_url.'dist/img/no-image-available.png';
+        }
+    }else{
+        return base_url.'dist/img/no-image-available.png';
+    }
 }
 function isMobileDevice(){
     $aMobileUA = array(
@@ -35,14 +40,11 @@ function isMobileDevice(){
         '/blackberry/i' => 'BlackBerry', 
         '/webos/i' => 'Mobile'
     );
-
-    //Return true if Mobile User Agent is detected
     foreach($aMobileUA as $sMobileKey => $sMobileOS){
         if(preg_match($sMobileKey, $_SERVER['HTTP_USER_AGENT'])){
             return true;
         }
     }
-    //Otherwise return false..  
     return false;
 }
 function randomPassword() {

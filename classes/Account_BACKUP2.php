@@ -21,7 +21,6 @@ Class Account extends DBConnection {
 
             extract($_POST);
 
-            // Added 'middlename' to the required fields list, but will handle it below
             $required_fields = ['firstname', 'lastname', 'address', 'marital_status', 'gender', 'phone_number', 'date_of_birth', 'id_type', 'id_number', 'email', 'firebase_uid'];
             foreach($required_fields as $field){
                 if(!isset($$field) || empty($$field)){
@@ -29,13 +28,8 @@ Class Account extends DBConnection {
                 }
             }
 
-            // Handle the optional middlename
-            $middlename = isset($middlename) && !empty($middlename) ? $middlename : NULL;
-
-
             $email_for_check = strtolower(trim($email));
             
-            // Check for existing email in the database for both MySQLi and PostgreSQL
             if ($this->db_type === 'mysqli') {
                 $chk_stmt = $this->conn->prepare("SELECT `id` FROM `accounts` WHERE lower(email) = ?");
                 if (!$chk_stmt) { throw new Exception("Failed to prepare statement for email check: " . $this->conn->error); }
@@ -46,10 +40,9 @@ Class Account extends DBConnection {
                     throw new Exception('This email address is already in our records.');
                 }
             } elseif ($this->db_type === 'pgsql') {
-                // Corrected PostgreSQL query syntax with double quotes for table and column names
-                $chk_stmt = $this->conn->prepare('SELECT "id" FROM "accounts" WHERE lower("email") = :email');
+                $chk_stmt = $this->conn->prepare("SELECT `id` FROM `accounts` WHERE lower(email) = ?");
                 if (!$chk_stmt) { throw new Exception("Failed to prepare statement for email check."); }
-                $chk_stmt->execute([':email' => $email_for_check]);
+                $chk_stmt->execute([$email_for_check]);
                 $result = $chk_stmt->fetch(PDO::FETCH_ASSOC);
                 if($result){
                     throw new Exception('This email address is already in our records.');
@@ -62,13 +55,11 @@ Class Account extends DBConnection {
             while(true){
                 $account_number = sprintf("%'.010d", mt_rand(0, 9999999999));
                 
-                // Corrected SQL syntax for both MySQLi and PostgreSQL for account number check
                 if ($this->db_type === 'mysqli') {
                     $chk_acc_num = $this->conn->query("SELECT `id` FROM `accounts` WHERE `account_number` = '{$account_number}'")->num_rows;
                 } elseif ($this->db_type === 'pgsql') {
-                    // Corrected PostgreSQL syntax with double quotes and prepared statement
-                    $stmt_check = $this->conn->prepare('SELECT "id" FROM "accounts" WHERE "account_number" = :account_number');
-                    $stmt_check->execute([':account_number' => $account_number]);
+                    $stmt_check = $this->conn->prepare("SELECT `id` FROM `accounts` WHERE `account_number` = ?");
+                    $stmt_check->execute([$account_number]);
                     $chk_acc_num = $stmt_check->rowCount();
                 }
                 
@@ -76,8 +67,7 @@ Class Account extends DBConnection {
             }
 
             $plain_pin = str_pad(mt_rand(0, 99999), 5, '0', STR_PAD_LEFT);
-            // Corrected SQL syntax for INSERT statement
-            $sql = 'INSERT INTO "accounts" ("firstname", "lastname", "middlename", "address", "marital_status", "gender", "phone_number", "date_of_birth", "id_type", "id_number", "email", "firebase_uid", "account_number", "balance", "status", "login_type", "first_login_done", "transaction_pin") VALUES (:firstname, :lastname, :middlename, :address, :marital_status, :gender, :phone_number, :date_of_birth, :id_type, :id_number, :email, :firebase_uid, :account_number, :balance, :status, :login_type, :first_login_done, :transaction_pin)';
+            $sql = "INSERT INTO `accounts` (`firstname`, `lastname`, `address`, `marital_status`, `gender`, `phone_number`, `date_of_birth`, `id_type`, `id_number`, `email`, `firebase_uid`, `account_number`, `balance`, `status`, `login_type`, `first_login_done`, `transaction_pin`) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)";
             
             $status = 'Pending';
             $login_type = 2;
@@ -88,31 +78,14 @@ Class Account extends DBConnection {
                 $stmt_insert = $this->conn->prepare($sql);
                 if (!$stmt_insert) { throw new Exception("Failed to prepare insert statement: " . $this->conn->error); }
                 $stmt_insert->bind_param("sssssssssssisssis",
-                    $firstname, $lastname, $middlename, $address, $marital_status, $gender, $phone_number, $date_of_birth, $id_type, $id_number, $email, $firebase_uid, $account_number, $balance, $status, $login_type, $first_login_done, $plain_pin
+                    $firstname, $lastname, $address, $marital_status, $gender, $phone_number, $date_of_birth, $id_type, $id_number, $email, $firebase_uid, $account_number, $balance, $status, $login_type, $first_login_done, $plain_pin
                 );
                 $save = $stmt_insert->execute();
             } elseif ($this->db_type === 'pgsql') {
                 $stmt_insert = $this->conn->prepare($sql);
                 if (!$stmt_insert) { throw new Exception("Failed to prepare insert statement."); }
                 $save = $stmt_insert->execute([
-                    ':firstname' => $firstname,
-                    ':lastname' => $lastname,
-                    ':middlename' => $middlename, // Added middlename parameter
-                    ':address' => $address,
-                    ':marital_status' => $marital_status,
-                    ':gender' => $gender,
-                    ':phone_number' => $phone_number,
-                    ':date_of_birth' => $date_of_birth,
-                    ':id_type' => $id_type,
-                    ':id_number' => $id_number,
-                    ':email' => $email,
-                    ':firebase_uid' => $firebase_uid,
-                    ':account_number' => $account_number,
-                    ':balance' => $balance,
-                    ':status' => $status,
-                    ':login_type' => $login_type,
-                    ':first_login_done' => $first_login_done,
-                    ':transaction_pin' => $plain_pin
+                    $firstname, $lastname, $address, $marital_status, $gender, $phone_number, $date_of_birth, $id_type, $id_number, $email, $firebase_uid, $account_number, $balance, $status, $login_type, $first_login_done, $plain_pin
                 ]);
             } else {
                 throw new Exception("Unsupported database type.");
@@ -153,10 +126,9 @@ Class Account extends DBConnection {
                 $result = $stmt->get_result();
                 $account_data = $result->fetch_assoc();
             } elseif ($this->db_type === 'pgsql') {
-                // Corrected PostgreSQL query syntax
-                $stmt = $this->conn->prepare('SELECT id, transaction_pin, first_login_done, status FROM "accounts" WHERE "firebase_uid" = :firebase_uid');
+                $stmt = $this->conn->prepare("SELECT id, transaction_pin, first_login_done, status FROM `accounts` WHERE `firebase_uid` = ?");
                 if (!$stmt) { throw new Exception("Failed to prepare statement."); }
-                $stmt->execute([':firebase_uid' => $firebase_uid]);
+                $stmt->execute([$firebase_uid]);
                 $account_data = $stmt->fetch(PDO::FETCH_ASSOC);
             } else {
                 throw new Exception("Unsupported database type.");
@@ -186,10 +158,9 @@ Class Account extends DBConnection {
                 $stmt->bind_param("i", $account_id);
                 $update = $stmt->execute();
             } elseif ($this->db_type === 'pgsql') {
-                // Corrected PostgreSQL query syntax with double quotes and named parameters
-                $stmt = $this->conn->prepare('UPDATE "accounts" SET "first_login_done" = 1 WHERE "id" = :id');
+                $stmt = $this->conn->prepare("UPDATE `accounts` SET `first_login_done` = 1 WHERE `id` = ?");
                 if (!$stmt) { throw new Exception("Failed to prepare statement."); }
-                $update = $stmt->execute([':id' => $account_id]);
+                $update = $stmt->execute([$account_id]);
             } else {
                 throw new Exception("Unsupported database type.");
             }
