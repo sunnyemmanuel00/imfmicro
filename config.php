@@ -16,10 +16,10 @@ if (!defined('base_url')) {
 
     if ($host === 'imfpayments.online' || $host === 'www.imfpayments.online') {
         // If the custom domain is detected, use it.
-        define('base_url', $protocol . $host . '/');
-    } elseif (strpos($host, 'onrender.com') !== false) {
+        define('base_url', 'https://imfpayments.online/');
+    } elseif (strpos($host, 'imfmicros.onrender.com') !== false) {
         // If the Render domain is detected, use it.
-        define('base_url', $protocol . $host . '/');
+        define('base_url', 'https://imfmicros.onrender.com/');
     } else {
         // Fallback for your local development environment.
         define('base_url', $protocol . $host . $local_path);
