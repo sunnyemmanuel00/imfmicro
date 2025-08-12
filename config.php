@@ -4,11 +4,40 @@ ini_set('date.timezone','Asia/Manila');
 date_default_timezone_set('Asia/Manila');
 session_start();
 
+// ====================================================================
+// FIX: Hardcoded Base URL for specific environments.
+// This is a direct fix that bypasses dynamic calculations by explicitly
+// checking the server's host name.
+// ====================================================================
+if (!defined('base_url')) {
+    $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
+    $host = $_SERVER['HTTP_HOST'];
+    $local_path = '/banking/'; // This is the subdirectory for your local XAMPP setup
+
+    if ($host === 'imfpayments.online' || $host === 'www.imfpayments.online') {
+        // If the custom domain is detected, use it.
+        define('base_url', $protocol . $host . '/');
+    } elseif (strpos($host, 'onrender.com') !== false) {
+        // If the Render domain is detected, use it.
+        define('base_url', $protocol . $host . '/');
+    } else {
+        // Fallback for your local development environment.
+        define('base_url', $protocol . $host . $local_path);
+    }
+}
+
 // =============================================================
-//  FIX: Define the database type for dual-compatibility.
-//  Use 'mysql' for local XAMPP and 'pgsql' for Render.
+// FIX: Define base_app dynamically to fix local paths on different servers.
 // =============================================================
-define('DB_TYPE', 'mysql');
+if (!defined('base_app')) {
+    define('base_app', __DIR__ . '/');
+}
+
+// =================================================================================================
+// IMPORTANT FIX: The database type must be set to 'pgsql' to work with your database.
+// Your previous file had 'mysql', which will cause a connection error.
+// =================================================================================================
+define('DB_TYPE', 'pgsql');
 
 require_once(__DIR__ . '/initialize.php');
 require_once(__DIR__ . '/classes/DBConnection.php');
