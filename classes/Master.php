@@ -409,7 +409,45 @@ function get_internal_account_details_for_transfer() {
         return json_encode($resp);
     }
 
- function transfer_internal() {
+function check_account_status($account_id) {
+    // Assuming a PDO connection is available as $this->conn
+    // and an 'accounts' table with an 'id' and 'status' column.
+    try {
+        $stmt_status = $this->conn->prepare("SELECT status FROM \"accounts\" WHERE id = :id");
+        if ($stmt_status === false) {
+            throw new Exception("Prepare failed to check account status: " . implode(" ", $this->conn->errorInfo()));
+        }
+        $stmt_status->bindValue(':id', $account_id, PDO::PARAM_INT);
+        $stmt_status->execute();
+        $account_status_data = $stmt_status->fetch(PDO::FETCH_ASSOC);
+
+        if ($account_status_data === false) {
+            throw new Exception("Sender account not found.");
+        }
+
+        if ($account_status_data['status'] !== 'active') {
+            return json_encode([
+                'status' => 'failed',
+                'msg' => "Your account status is currently '{$account_status_data['status']}'. Transfers are not permitted. Please contact support."
+            ]);
+        }
+
+        // Return a success status if the account is active
+        return json_encode(['status' => 'success', 'msg' => 'Account is active.']);
+
+    } catch (Exception $e) {
+        return json_encode([
+            'status' => 'failed',
+            'msg' => "Security check failed: " . $e->getMessage()
+        ]);
+    }
+}
+
+/**
+ * Handles internal transfers between accounts.
+ * Now includes a check_account_status call at the beginning.
+ */
+function transfer_internal() {
     // Explicitly define variables from $_POST
     $amount = $_POST['amount'] ?? 0;
     $recipient_account_number = $_POST['recipient_account_number'] ?? '';
@@ -454,6 +492,7 @@ function get_internal_account_details_for_transfer() {
         if ($sender_data === false) {
             throw new Exception("Sender account not found.");
         }
+        
         $sender_current_balance = $sender_data['balance'];
         $sender_stored_pin = $sender_data['transaction_pin'];
         $sender_account_holder_name = trim($sender_data['firstname'] . ' ' . (isset($sender_data['middlename']) && !empty($sender_data['middlename']) ? $sender_data['middlename'] . ' ' : '') . $sender_data['lastname']);
@@ -586,6 +625,7 @@ function get_internal_account_details_for_transfer() {
     }
     return json_encode($resp);
 }
+
 function transfer_external() {
     // Explicitly define variables from $_POST
     $amount_external = $_POST['amount_external'] ?? 0;
@@ -622,7 +662,7 @@ function transfer_external() {
 
     $this->conn->beginTransaction();
     try {
-        // Fetch sender account data using PDO, locking the row for the transaction
+        // Fetch sender account data using PDO
         $stmt_sender = $this->conn->prepare("SELECT balance, transaction_pin FROM \"accounts\" WHERE id = :id FOR UPDATE");
         if ($stmt_sender === false) {
             throw new Exception("Prepare failed to fetch sender account: " . implode(" ", $this->conn->errorInfo()));
@@ -634,10 +674,11 @@ function transfer_external() {
         if ($sender_data === false) {
             throw new Exception("Sender account not found.");
         }
+        
         $sender_current_balance = $sender_data['balance'];
         $sender_stored_pin = $sender_data['transaction_pin'];
 
-        // PIN validation with direct comparison (plaintext)
+        // PIN validation
         if (trim($entered_pin) != trim($sender_stored_pin)) {
             throw new Exception("Invalid Transaction PIN.");
         }
@@ -645,57 +686,58 @@ function transfer_external() {
         if ($sender_current_balance < $transfer_amount) {
             throw new Exception("Insufficient funds for external transfer.");
         }
-
-        // --- START OF CORRECTED CODE BLOCK ---
-
-        // 1. Insert the recipient's details into the 'recipients' table
-        $insert_recipient_stmt = $this->conn->prepare("INSERT INTO \"recipients\" (\"user_id\", \"account_number\", \"bank_name\", \"account_name\") VALUES (:user_id, :account_number, :bank_name, :account_name) RETURNING id");
+        
+        // Debit the sender's account immediately when the transfer is initiated.
+        $new_sender_balance = $sender_current_balance - $transfer_amount;
+        $update_sender_stmt = $this->conn->prepare("UPDATE \"accounts\" SET \"balance\" = :balance WHERE \"id\" = :id");
+        $update_sender_stmt->bindValue(':balance', $new_sender_balance);
+        $update_sender_stmt->bindValue(':id', $sender_account_id, PDO::PARAM_INT);
+        if (!$update_sender_stmt->execute()) {
+             throw new Exception("Failed to debit sender account: " . implode(" ", $update_sender_stmt->errorInfo()));
+        }
+        $this->settings->set_userdata('balance', $new_sender_balance);
+        
+        // Insert or update the recipient in the `recipients` table
+        $insert_recipient_stmt = $this->conn->prepare("INSERT INTO \"recipients\" (\"user_id\", \"account_number\", \"bank_name\", \"account_name\") VALUES (:user_id, :account_number, :bank_name, :account_name) ON CONFLICT (\"account_number\") DO UPDATE SET account_name = :account_name, bank_name = :bank_name RETURNING id");
 
         if ($insert_recipient_stmt === false) {
             throw new Exception("Prepare failed to record recipient: " . implode(" ", $this->conn->errorInfo()));
         }
-
-        // The 'user_id' in the recipients table should be the user making the transfer
         $insert_recipient_stmt->bindValue(':user_id', $sender_account_id, PDO::PARAM_INT);
         $insert_recipient_stmt->bindValue(':account_number', $recipient_account_number_external);
         $insert_recipient_stmt->bindValue(':bank_name', $recipient_bank_name);
         $insert_recipient_stmt->bindValue(':account_name', $recipient_account_name_external);
-
         if (!$insert_recipient_stmt->execute()) {
             throw new Exception("Failed to record recipient: " . implode(" ", $insert_recipient_stmt->errorInfo()));
         }
-
         $recipient_id = $insert_recipient_stmt->fetch(PDO::FETCH_ASSOC)['id'];
+
         if (!$recipient_id) {
             throw new Exception("Failed to retrieve recipient ID after insertion.");
         }
-
-        // 2. Insert the pending transaction using the new recipient_id
-        $narration = "External Transfer Request to " . $recipient_account_name_external . " (" . $recipient_bank_name . ", Account: " . $recipient_account_number_external . ")";
+        
+        $description = "External Transfer Request to " . $recipient_account_name_external . " (" . $recipient_bank_name . " BANK, Account: " . $recipient_account_number_external . ")";
         if (!empty($narration_external)) {
-            $narration .= " - " . $narration_external;
+            $description .= " - " . $narration_external;
         }
 
-        $insert_pending_stmt = $this->conn->prepare("INSERT INTO \"pending_transactions\" (\"sender_id\", \"recipient_id\", \"amount\", \"description\", \"status\") VALUES (:sender_id, :recipient_id, :amount, :description, 'pending')");
-
+        // **CORRECTION:** This INSERT statement now correctly reflects your `pending_transactions` schema,
+        // using the `recipient_id` column instead of the non-existent `recipient_account_number`.
+        $insert_pending_stmt = $this->conn->prepare("INSERT INTO \"pending_transactions\" (\"sender_id\", \"amount\", \"description\", \"status\", \"recipient_id\") VALUES (:sender_id, :amount, :description, 'pending', :recipient_id)");
         if ($insert_pending_stmt === false) {
             throw new Exception("Prepare failed to record pending transaction: " . implode(" ", $this->conn->errorInfo()));
         }
-
         $insert_pending_stmt->bindValue(':sender_id', $sender_account_id, PDO::PARAM_INT);
-        $insert_pending_stmt->bindValue(':recipient_id', $recipient_id, PDO::PARAM_INT);
         $insert_pending_stmt->bindValue(':amount', $transfer_amount);
-        $insert_pending_stmt->bindValue(':description', $narration);
+        $insert_pending_stmt->bindValue(':description', $description);
+        $insert_pending_stmt->bindValue(':recipient_id', $recipient_id, PDO::PARAM_INT);
 
         if (!$insert_pending_stmt->execute()) {
             throw new Exception("Failed to record pending transaction: " . implode(" ", $insert_pending_stmt->errorInfo()));
         }
 
-        // 3. Commit the changes
         $this->conn->commit();
 
-        // 4. Update the session and send success response
-        // Note: We are no longer debiting the account or updating the session balance at this stage.
         $resp['status'] = 'success';
         $resp['msg'] = 'External transfer request submitted successfully. It is pending admin approval.';
         $this->settings->set_flashdata('success', 'External transfer request submitted successfully.');
@@ -709,6 +751,8 @@ function transfer_external() {
     }
     return json_encode($resp);
 }
+
+
 function get_linked_accounts($user_id) {
     $resp = array('status' => 'failed', 'msg' => '', 'data' => []);
     if (empty($user_id)) {
@@ -1426,7 +1470,6 @@ function transfer_to_linked_account(){
     return json_encode($resp);
 }
 
- // START of new functions for transaction management
 
 function approve_transaction(){
     extract($_POST);
@@ -1436,48 +1479,80 @@ function approve_transaction(){
         return json_encode($resp);
     }
     
-    // Use the variable name from the AJAX call: 'transaction_id'
-    $id_to_process = $transaction_id; 
+    $id_to_process = $transaction_id ?? $id;
 
-    // Use PDO for consistency and better error handling, assuming $this->conn is a PDO object
     try {
         $this->conn->beginTransaction();
 
-        $stmt = $this->conn->prepare('SELECT * FROM "transactions" WHERE "id" = ? FOR UPDATE');
-        $stmt->execute([$id_to_process]);
-        $transaction_data = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Fetch the pending transaction from the `pending_transactions` table
+        $stmt_fetch = $this->conn->prepare('SELECT * FROM "pending_transactions" WHERE "id" = ? FOR UPDATE');
+        $stmt_fetch->execute([$id_to_process]);
+        $pending_transaction_data = $stmt_fetch->fetch(PDO::FETCH_ASSOC);
 
-        if (!$transaction_data) {
-            throw new Exception("Transaction not found.");
+        if (!$pending_transaction_data) {
+            throw new Exception("Pending transaction not found.");
         }
+        
+        $sender_account_id = $pending_transaction_data['sender_id'];
+        $recipient_id = $pending_transaction_data['recipient_id'];
+        $transaction_amount = $pending_transaction_data['amount'];
+        $description = $pending_transaction_data['description'];
+        
+        // **CORRECTION:** Fetch the sender's account number from the 'accounts' table
+        $stmt_sender_acc = $this->conn->prepare('SELECT account_number FROM "accounts" WHERE id = ?');
+        $stmt_sender_acc->execute([$sender_account_id]);
+        $sender_account_number = $stmt_sender_acc->fetchColumn();
 
-        if ($transaction_data['status'] !== 'pending') {
-            throw new Exception("Transaction is not pending or has already been processed.");
+        // Fetch the recipient's account number using the recipient_id
+        $stmt_recipient_acc = $this->conn->prepare('SELECT account_number FROM "accounts" WHERE id = ?');
+        $stmt_recipient_acc->execute([$recipient_id]);
+        $recipient_account_number = $stmt_recipient_acc->fetchColumn();
+
+        // Check if the recipient account exists internally
+        $internal_recipient = $recipient_account_number ? true : false;
+        
+        $linked_account_id = $recipient_id; // This is the recipient_id from the pending table
+        $transaction_type = 'transfer_external_debit';
+
+        // If it's an internal transfer, credit the recipient's balance
+        if ($internal_recipient) {
+            $update_balance_stmt = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" + ? WHERE "account_number" = ?');
+            $update_balance_stmt->execute([$transaction_amount, $recipient_account_number]);
+            
+            $transaction_type = 'transfer_internal_debit';
+        } else {
+            // For external transfers, we need to find the recipient's ID from the `recipients` table
+            $check_recipient_stmt_ext = $this->conn->prepare('SELECT "account_number" FROM "recipients" WHERE "id" = ?');
+            $check_recipient_stmt_ext->execute([$recipient_id]);
+            $recipient_account_number = $check_recipient_stmt_ext->fetchColumn();
+            
+            $transaction_type = 'transfer_external_debit';
         }
         
-        // Simplified logic: only pending deposits or transfers can be approved.
-        $original_transaction_type = $transaction_data['transaction_type'];
-        if (strpos($original_transaction_type, 'pending') === false) {
-             throw new Exception("Transaction type is not a pending type.");
-        }
+        // Insert into the main `transactions` table with all the correct columns
+        $transaction_code = 'IMF-' . date('Ymd') . '-' . substr(md5(uniqid(rand(), true)), 0, 8);
+        $insert_stmt = $this->conn->prepare('INSERT INTO "transactions" ("transaction_code", "account_id", "linked_account_id", "transaction_type", "amount", "status", "type", "remarks", "sender_account_number", "receiver_account_number") 
+                                             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+        $insert_stmt->execute([
+            $transaction_code,
+            $sender_account_id,
+            $linked_account_id,
+            $transaction_type,
+            $transaction_amount,
+            'completed',
+            3, // Type 3 represents an outgoing transaction
+            $description,
+            $sender_account_number,
+            $recipient_account_number,
+        ]);
         
-        $target_account_id = $transaction_data['account_id'];
-        $transaction_amount = $transaction_data['amount'];
-        
-        // For deposits, credit the account. For transfers, the money is already debited, so we just mark as complete.
-        if (strpos($original_transaction_type, 'deposit') !== false) {
-            $update_balance_stmt = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" + ? WHERE "id" = ?');
-            $update_balance_stmt->execute([$transaction_amount, $target_account_id]);
-        }
-        
-        // Update the transaction status and type
-        $new_transaction_type = str_replace('_pending', '_completed', $original_transaction_type);
-        $update_txn_stmt = $this->conn->prepare('UPDATE "transactions" SET "status" = ?, "transaction_type" = ? WHERE "id" = ?');
-        $update_txn_stmt->execute(['completed', $new_transaction_type, $id_to_process]);
+        // Delete the transaction from the `pending_transactions` table
+        $delete_stmt = $this->conn->prepare('DELETE FROM "pending_transactions" WHERE "id" = ?');
+        $delete_stmt->execute([$id_to_process]);
 
         $this->conn->commit();
         $resp['status'] = 'success';
-        $resp['msg'] = 'Transaction successfully approved.';
+        $resp['msg'] = 'Transaction successfully approved and balance updated.';
         $this->settings->set_flashdata('success', 'Transaction has been approved successfully.');
 
     } catch (Exception $e) {
@@ -1489,59 +1564,113 @@ function approve_transaction(){
     }
     return json_encode($resp);
 }
+// --------------------------------------------------
 
-function decline_transaction(){
+
+function decline_transaction() {
     extract($_POST);
     $resp = ['status' => 'failed', 'msg' => 'An unknown error occurred.'];
+    
     if ($this->settings->userdata('login_type') != 1) {
         $resp['msg'] = "Unauthorized access. Only administrators can decline transactions.";
         return json_encode($resp);
     }
     
-    // Use the variable name from AJAX call: 'transaction_id' and 'reason'
-    $id_to_process = $transaction_id;
-    $decline_reason = $reason ?? 'No reason provided.';
+    $id_to_process = $transaction_id ?? $id;
 
     try {
         $this->conn->beginTransaction();
 
-        $stmt = $this->conn->prepare('SELECT * FROM "transactions" WHERE "id" = ? FOR UPDATE');
-        $stmt->execute([$id_to_process]);
-        $transaction_data = $stmt->fetch(PDO::FETCH_ASSOC);
+        // Check if it's a pending transaction
+        $stmt_pending = $this->conn->prepare('SELECT * FROM "pending_transactions" WHERE "id" = ? FOR UPDATE');
+        $stmt_pending->execute([$id_to_process]);
+        $pending_transaction_data = $stmt_pending->fetch(PDO::FETCH_ASSOC);
 
-        if (!$transaction_data) {
-            throw new Exception("Transaction not found.");
-        }
-
-        if ($transaction_data['status'] !== 'pending') {
-            throw new Exception("Transaction is not pending or has already been processed.");
-        }
-        
-        $original_transaction_type = $transaction_data['transaction_type'];
-        if (strpos($original_transaction_type, 'pending') === false) {
-             throw new Exception("Transaction type is not a pending type.");
-        }
-        
-        // If it was an outgoing transfer, refund the money to the sender's account.
-        if (strpos($original_transaction_type, 'transfer') !== false) {
-            $sender_account_id = $transaction_data['account_id'];
-            $transaction_amount = $transaction_data['amount'];
+        if ($pending_transaction_data) {
+            $sender_account_id = $pending_transaction_data['sender_id'];
+            $recipient_id = $pending_transaction_data['recipient_id'];
+            $transaction_amount = $pending_transaction_data['amount'];
+            $description = $pending_transaction_data['description'];
+            
+            // Refund the money to the sender's account.
             $update_balance_stmt = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" + ? WHERE "id" = ?');
             $update_balance_stmt->execute([$transaction_amount, $sender_account_id]);
+            
+            // --- NEW CODE ADDED HERE ---
+            // Fetch the sender's account number for logging
+            $stmt_sender_acc = $this->conn->prepare('SELECT account_number FROM "accounts" WHERE id = ?');
+            $stmt_sender_acc->execute([$sender_account_id]);
+            $sender_account_number = $stmt_sender_acc->fetchColumn();
+
+            // Fetch the recipient's account number from the accounts or recipients table
+            $stmt_recipient_acc = $this->conn->prepare('SELECT account_number FROM "accounts" WHERE id = ?');
+            $stmt_recipient_acc->execute([$recipient_id]);
+            $recipient_account_number = $stmt_recipient_acc->fetchColumn();
+
+            // If the recipient is external, fetch the account number from the recipients table
+            if (!$recipient_account_number) {
+                $stmt_ext_acc = $this->conn->prepare('SELECT account_number FROM "recipients" WHERE id = ?');
+                $stmt_ext_acc->execute([$recipient_id]);
+                $recipient_account_number = $stmt_ext_acc->fetchColumn();
+            }
+
+            // Insert a new record into the transactions table with a 'declined' status
+            $transaction_code = 'IMF-' . date('Ymd') . '-' . substr(md5(uniqid(rand(), true)), 0, 8);
+            $insert_stmt = $this->conn->prepare('INSERT INTO "transactions" ("transaction_code", "account_id", "linked_account_id", "transaction_type", "amount", "status", "type", "remarks", "sender_account_number", "receiver_account_number") 
+                                                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+            $insert_stmt->execute([
+                $transaction_code,
+                $sender_account_id,
+                $recipient_id,
+                'transfer_external_declined',
+                $transaction_amount,
+                'declined',
+                3, // Type 3 represents an outgoing transaction
+                'Declined: ' . $description,
+                $sender_account_number,
+                $recipient_account_number,
+            ]);
+            // --- END OF NEW CODE ---
+            
+            // Delete the transaction from the pending_transactions table.
+            $delete_stmt = $this->conn->prepare('DELETE FROM "pending_transactions" WHERE "id" = ?');
+            $delete_stmt->execute([$id_to_process]);
+            
+            $this->conn->commit();
+            $resp['status'] = 'success';
+            $resp['msg'] = 'Pending transaction successfully declined and funds refunded.';
+            $this->settings->set_flashdata('success', 'Pending transaction has been declined successfully.');
+        } else {
+            // If not found in pending, check if it exists in the main transactions table
+            $stmt_main = $this->conn->prepare('SELECT * FROM "transactions" WHERE "id" = ? AND "status" != \'declined\' FOR UPDATE');
+            $stmt_main->execute([$id_to_process]);
+            $main_transaction_data = $stmt_main->fetch(PDO::FETCH_ASSOC);
+
+            if ($main_transaction_data) {
+                // If found, this means we are changing a 'completed' transaction to 'declined'.
+                // Refund the money if it was a debit.
+                if (strpos($main_transaction_data['transaction_type'], 'debit') !== false || strpos($main_transaction_data['transaction_type'], 'withdraw') !== false) {
+                    $account_id = $main_transaction_data['account_id'];
+                    $transaction_amount = $main_transaction_data['amount'];
+                    
+                    $update_balance_stmt = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" + ? WHERE "id" = ?');
+                    $update_balance_stmt->execute([$transaction_amount, $account_id]);
+                    
+                    // Update the transaction status to 'declined'
+                    $update_status_stmt = $this->conn->prepare('UPDATE "transactions" SET "status" = \'declined\' WHERE "id" = ?');
+                    $update_status_stmt->execute([$id_to_process]);
+                    
+                    $this->conn->commit();
+                    $resp['status'] = 'success';
+                    $resp['msg'] = 'Completed transaction successfully declined and funds refunded.';
+                    $this->settings->set_flashdata('success', 'Completed transaction has been declined successfully.');
+                } else {
+                    throw new Exception("This type of transaction cannot be declined after completion.");
+                }
+            } else {
+                throw new Exception("Transaction not found or already declined.");
+            }
         }
-
-        // Update the transaction status, type, and add the decline reason to remarks.
-        $new_transaction_type = str_replace('_pending', '_declined', $original_transaction_type);
-        $new_remarks = $transaction_data['remarks'] . " (Declined by Admin. Reason: " . $decline_reason . ")";
-        
-        $update_txn_stmt = $this->conn->prepare('UPDATE "transactions" SET "status" = ?, "transaction_type" = ?, "remarks" = ? WHERE "id" = ?');
-        $update_txn_stmt->execute(['declined', $new_transaction_type, $new_remarks, $id_to_process]);
-
-        $this->conn->commit();
-        $resp['status'] = 'success';
-        $resp['msg'] = 'Transaction successfully declined.';
-        $this->settings->set_flashdata('success', 'Transaction has been declined successfully.');
-
     } catch (Exception $e) {
         if ($this->conn->inTransaction()) {
             $this->conn->rollBack();
@@ -1552,6 +1681,9 @@ function decline_transaction(){
     return json_encode($resp);
 }
 
+
+// --------------------------------------------------
+
 function delete_transaction(){
     extract($_POST);
     $resp = ['status' => 'failed', 'msg' => 'An unknown error occurred.'];
@@ -1561,20 +1693,39 @@ function delete_transaction(){
     }
     
     try {
-        $stmt = $this->conn->prepare('DELETE FROM "transactions" WHERE "id" = ?');
-        $stmt->execute([$id]);
-        if ($stmt->rowCount() > 0) {
+        $this->conn->beginTransaction();
+
+        // Try to delete from main transactions table
+        $stmt_main = $this->conn->prepare('DELETE FROM "transactions" WHERE "id" = ?');
+        $stmt_main->execute([$id]);
+        $rows_affected = $stmt_main->rowCount();
+
+        // If not found in main table, try to delete from pending transactions table
+        if ($rows_affected == 0) {
+            $stmt_pending = $this->conn->prepare('DELETE FROM "pending_transactions" WHERE "id" = ?');
+            $stmt_pending->execute([$id]);
+            $rows_affected = $stmt_pending->rowCount();
+        }
+
+        if ($rows_affected > 0) {
+            $this->conn->commit();
             $resp['status'] = 'success';
             $this->settings->set_flashdata('success', "Transaction successfully deleted.");
         } else {
+            $this->conn->rollBack();
             $resp['msg'] = "Transaction not found or already deleted.";
         }
     } catch (PDOException $e) {
+        if ($this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
         $resp['msg'] = "Database error: " . $e->getMessage();
         error_log("Delete transaction failed: " . $e->getMessage());
     }
     return json_encode($resp);
 }
+
+// --------------------------------------------------
 
 function save_transaction(){
     extract($_POST);
@@ -1584,50 +1735,185 @@ function save_transaction(){
         return json_encode($resp);
     }
     
-    // Sanitize what fields can be updated
-    $data = "";
-    $params = [];
-    
-    // Only allow updating these specific fields
-    if (isset($amount)) {
-        $data .= '"amount" = ?, ';
-        $params[] = $amount;
-    }
-    if (isset($remarks)) {
-        $data .= '"remarks" = ?, ';
-        $params[] = $remarks;
-    }
-    if (isset($status)) {
-        $data .= '"status" = ?, ';
-        $params[] = $status;
-    }
-    
-    if (empty($data)) {
-        $resp['msg'] = "No fields to update.";
+    if (!isset($id)) {
+        $resp['msg'] = "Transaction ID is missing.";
         return json_encode($resp);
     }
-    
-    $data = rtrim($data, ', ');
-    $params[] = $id; // Add the ID for the WHERE clause
 
     try {
-        $sql = "UPDATE \"transactions\" SET {$data} WHERE \"id\" = ?";
-        $stmt = $this->conn->prepare($sql);
-        $stmt->execute($params);
+        $this->conn->beginTransaction();
+
+        // Check if the transaction is pending or completed
+        $is_pending = isset($_POST['is_pending']) && $_POST['is_pending'] === 'true';
+
+        if ($is_pending) {
+            // Logic for updating pending transactions
+            $stmt_fetch = $this->conn->prepare('SELECT * FROM "pending_transactions" WHERE "id" = ? FOR UPDATE');
+            $stmt_fetch->execute([$id]);
+            $original_data = $stmt_fetch->fetch(PDO::FETCH_ASSOC);
+
+            if (!$original_data) {
+                throw new Exception("Pending transaction not found.");
+            }
+            
+            // Refund logic is removed. The amount in the pending transaction is simply updated.
+            // The actual debit/credit should only happen when the transaction is approved.
+            
+            // Build the update query for pending_transactions table
+            $data = "";
+            $params = [];
+            
+            if (isset($amount)) {
+                $data .= '"amount" = ?, ';
+                $params[] = $amount;
+            }
+            if (isset($remarks)) {
+                // Corrected column name to match 'pending_transactions' table
+                $data .= '"description" = ?, ';
+                $params[] = $remarks;
+            }
+            
+            // Only update the status to completed or declined here.
+            if (isset($status) && in_array($status, ['completed', 'declined'])) {
+                 $data .= '"status" = ?, ';
+                 $params[] = $status;
+            }
+            
+            if (empty($data)) {
+                $resp['msg'] = "No fields to update.";
+                return json_encode($resp);
+            }
+            
+            $data = rtrim($data, ', ');
+            $params[] = $id;
+            
+            $sql = "UPDATE \"pending_transactions\" SET {$data} WHERE \"id\" = ?";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->execute($params);
+            
+            // If the status is changed to 'completed' or 'declined', handle it accordingly
+            if (isset($status)) {
+                if ($status == 'completed') {
+                    // Logic to approve and move to the main transactions table
+                    $sender_account_id = $original_data['sender_id'];
+                    $recipient_account_id = $original_data['recipient_id'];
+                    $transaction_amount = $amount ?? $original_data['amount'];
+                    
+                    // Add amount to recipient's balance
+                    $update_balance_stmt_credit = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" + ? WHERE "id" = ?');
+                    $update_balance_stmt_credit->execute([$transaction_amount, $recipient_account_id]);
+                    
+                    // Deduct amount from sender's balance (this should have been done when the pending transaction was created)
+                    $update_balance_stmt_debit = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" - ? WHERE "id" = ?');
+                    $update_balance_stmt_debit->execute([$transaction_amount, $sender_account_id]);
+
+                    // Generate a unique transaction code
+                    $transaction_code = 'IMF-' . date('Ymd') . '-' . substr(md5(uniqid(rand(), true)), 0, 8);
+
+                    // Insert the debit record into the main transactions table
+                    $insert_debit_stmt = $this->conn->prepare('
+                        INSERT INTO "transactions" ("transaction_code", "account_id", "linked_account_id", "transaction_type", "type", "amount", "remarks", "status", "date_created") 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                    ');
+                    $insert_debit_stmt->execute([
+                        $transaction_code,
+                        $sender_account_id,
+                        $recipient_account_id,
+                        'transfer_external_debit',
+                        '2', // '2' for debit
+                        $transaction_amount,
+                        $remarks ?? $original_data['description'],
+                        'completed'
+                    ]);
+
+                    // Insert the credit record into the main transactions table
+                    $insert_credit_stmt = $this->conn->prepare('
+                        INSERT INTO "transactions" ("transaction_code", "account_id", "linked_account_id", "transaction_type", "type", "amount", "remarks", "status", "date_created") 
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW())
+                    ');
+                    $insert_credit_stmt->execute([
+                        $transaction_code,
+                        $recipient_account_id,
+                        $sender_account_id,
+                        'transfer_external_credit',
+                        '1', // '1' for credit
+                        $transaction_amount,
+                        $remarks ?? $original_data['description'],
+                        'completed'
+                    ]);
+                    
+                    // Delete the pending transaction
+                    $delete_stmt = $this->conn->prepare('DELETE FROM "pending_transactions" WHERE "id" = ?');
+                    $delete_stmt->execute([$id]);
+
+                } elseif ($status == 'declined') {
+                    // Logic to decline and delete
+                    // It's a good idea to refund the debited amount here if it was already deducted when creating the pending transaction.
+                    // Assuming it was, we need to refund it.
+                    $sender_account_id = $original_data['sender_id'];
+                    $amount_to_refund = $amount ?? $original_data['amount'];
+                    $update_balance_stmt_refund = $this->conn->prepare('UPDATE "accounts" SET "balance" = "balance" + ? WHERE "id" = ?');
+                    $update_balance_stmt_refund->execute([$amount_to_refund, $sender_account_id]);
+                    
+                    // Delete the pending transaction
+                    $delete_stmt = $this->conn->prepare('DELETE FROM "pending_transactions" WHERE "id" = ?');
+                    $delete_stmt->execute([$id]);
+                }
+            }
+
+        } else {
+            // Logic for updating main transactions table
+            $stmt_fetch = $this->conn->prepare('SELECT * FROM "transactions" WHERE "id" = ? FOR UPDATE');
+            $stmt_fetch->execute([$id]);
+            $original_data = $stmt_fetch->fetch(PDO::FETCH_ASSOC);
+
+            if (!$original_data) {
+                throw new Exception("Transaction not found.");
+            }
+            
+            // Build the update query for the transactions table
+            $data = "";
+            $params = [];
+            if (isset($amount)) {
+                $data .= '"amount" = ?, ';
+                $params[] = $amount;
+            }
+            if (isset($remarks)) {
+                $data .= '"remarks" = ?, ';
+                $params[] = $remarks;
+            }
+            if (isset($status)) {
+                $data .= '"status" = ?, ';
+                $params[] = $status;
+            }
+            
+            if (empty($data)) {
+                $resp['msg'] = "No fields to update.";
+                return json_encode($resp);
+            }
+            
+            $data = rtrim($data, ', ');
+            $params[] = $id;
+            
+            $sql = "UPDATE \"transactions\" SET {$data} WHERE \"id\" = ?";
+            $stmt = $this->conn->prepare($sql);
+            $stmt->execute($params);
+        }
         
+        $this->conn->commit();
         $resp['status'] = 'success';
         $this->settings->set_flashdata('success', "Transaction successfully updated.");
 
-    } catch (PDOException $e) {
+    } catch (Exception $e) {
+        if ($this->conn->inTransaction()) {
+            $this->conn->rollBack();
+        }
         $resp['msg'] = "Database error: " . $e->getMessage();
         error_log("Save transaction failed: " . $e->getMessage());
     }
     
     return json_encode($resp);
 }
-
-// END of new functions
-
 
     function save_announcement(){
         extract($_POST);

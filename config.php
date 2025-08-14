@@ -6,8 +6,8 @@ session_start();
 
 // ====================================================================
 // FIX: Hardcoded Base URL for specific environments.
-// This is a direct fix that bypasses dynamic calculations by explicitly
-// checking the server's host name.
+// This new logic detects the environment and sets the correct base URL.
+// The DB_TYPE constant has been removed as it is now handled directly by the DBConnection class.
 // ====================================================================
 if (!defined('base_url')) {
     $protocol = isset($_SERVER['HTTPS']) && $_SERVER['HTTPS'] === 'on' ? 'https://' : 'http://';
@@ -21,7 +21,7 @@ if (!defined('base_url')) {
         // If the Render domain is detected, use it.
         define('base_url', 'https://imfmicros.onrender.com/');
     } else {
-        // Fallback for your local development environment.
+        // Fallback for your local development environment (XAMPP).
         define('base_url', $protocol . $host . $local_path);
     }
 }
@@ -32,12 +32,6 @@ if (!defined('base_url')) {
 if (!defined('base_app')) {
     define('base_app', __DIR__ . '/');
 }
-
-// =================================================================================================
-// IMPORTANT FIX: The database type must be set to 'pgsql' to work with your database.
-// Your previous file had 'mysql', which will cause a connection error.
-// =================================================================================================
-define('DB_TYPE', 'pgsql');
 
 require_once(__DIR__ . '/initialize.php');
 require_once(__DIR__ . '/classes/DBConnection.php');
